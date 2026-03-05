@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "deploy": "npm run build && wrangler pages deploy dist/ --project-name lobster-builder"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.1",

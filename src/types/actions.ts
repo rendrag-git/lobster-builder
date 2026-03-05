@@ -32,6 +32,8 @@ export interface ConfigField {
   options?: ConfigFieldOption[]
   /** Whether this field is required */
   required?: boolean
+  /** When set, populates select options from live Gateway discovery data */
+  gatewaySource?: 'agents' | 'models' | 'channels' | 'skills' | 'tools'
 }
 
 export interface CompileContext {

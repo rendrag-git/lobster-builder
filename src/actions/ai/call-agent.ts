@@ -10,7 +10,17 @@ const callAgent: ActionDefinition = {
   inputs: [{ id: 'input', label: 'Context', kind: 'any' }],
   outputs: [{ id: 'output', label: 'Response', kind: 'json' }],
   configFields: [
-    { id: 'agent', label: 'Agent Name', type: 'text', required: true, placeholder: 'e.g. soren, atlas, dave' },
+    {
+      id: 'agent',
+      label: 'Agent',
+      type: 'select',
+      required: true,
+      gatewaySource: 'agents',
+      options: [
+        { label: '(connect Gateway to discover agents)', value: '' },
+      ],
+      placeholder: 'e.g. soren, atlas, dave',
+    },
     { id: 'task', label: 'Task', type: 'textarea', required: true, placeholder: 'What should the agent do?' },
   ],
   defaults: { agent: '', task: '' },

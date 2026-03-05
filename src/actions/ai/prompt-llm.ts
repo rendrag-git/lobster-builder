@@ -12,6 +12,7 @@ const promptLlm: ActionDefinition = {
   configFields: [
     {
       id: 'model', label: 'Model', type: 'select', required: true,
+      gatewaySource: 'models',
       options: [
         { label: 'Sonnet', value: 'sonnet' },
         { label: 'Haiku', value: 'haiku' },

@@ -12,6 +12,7 @@ const sendNotification: ActionDefinition = {
   configFields: [
     {
       id: 'channel', label: 'Channel', type: 'select',
+      gatewaySource: 'channels',
       options: [
         { label: 'Email', value: 'email' },
         { label: 'Slack', value: 'slack' },

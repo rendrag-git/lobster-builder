@@ -1,4 +1,5 @@
 import type { ConfigField as ConfigFieldDef } from '../types/actions'
+import { useGatewayOptions } from '../store/gateway-store'
 
 interface ConfigFieldProps {
   field: ConfigFieldDef
@@ -9,6 +10,9 @@ interface ConfigFieldProps {
 export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
   const baseInput =
     'w-full px-2 py-1.5 text-xs bg-gray-800 border border-gray-700 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500 transition-colors'
+
+  // Always call hook at top level (Rules of Hooks). Returns null when disconnected or no source.
+  const gatewayOptions = useGatewayOptions(field.gatewaySource)
 
   const label = (
     <label className="block text-xs text-gray-400 mb-1">
@@ -36,16 +40,30 @@ export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
     )
   }
 
-  if (field.type === 'select' && field.options) {
+  if (field.type === 'select') {
+    // Resolve options: gateway source wins when connected, static fallback otherwise
+    const options = gatewayOptions ?? field.options ?? []
+    const isLive = gatewayOptions !== null
+
     return (
       <div className="mb-3">
-        {label}
+        <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
+          {field.label}
+          {field.required && <span className="text-red-400 ml-1">*</span>}
+          {isLive && (
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-green-500 ml-1"
+              title="Live from Gateway"
+            />
+          )}
+        </label>
         <select
           value={String(value ?? field.defaultValue ?? '')}
           onChange={(e) => onChange(e.target.value)}
           className={baseInput}
         >
-          {field.options.map((opt) => (
+          {options.length === 0 && <option value="">(no options available)</option>}
+          {options.map((opt) => (
             <option key={opt.value} value={opt.value}>
               {opt.label}
             </option>

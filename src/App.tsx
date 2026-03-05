@@ -8,12 +8,15 @@ import { Canvas } from './app/Canvas'
 import { ConfigPanel } from './app/ConfigPanel'
 import { YamlPreview } from './app/YamlPreview'
 import { TemplatePickerModal } from './app/TemplatePickerModal'
+import { GatewayPanel } from './app/GatewayPanel'
 import { useWorkflowStore } from './store/workflow-store'
+import { useGatewayStore } from './store/gateway-store'
 import { downloadWorkflow, downloadBuilderState, importFromFile } from './lib/file-io'
 import { Upload, Download, FileJson, LayoutTemplate, Sun, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react'
 
 interface ToolbarProps {
   onShowTemplates: () => void
+  onShowGateway: () => void
   isDark: boolean
   onToggleDark: () => void
   sidebarOpen: boolean
@@ -22,8 +25,16 @@ interface ToolbarProps {
   onToggleRightPanel: () => void
 }
 
-function Toolbar({ onShowTemplates, isDark, onToggleDark, sidebarOpen, onToggleSidebar, rightPanelOpen, onToggleRightPanel }: ToolbarProps) {
+function Toolbar({ onShowTemplates, onShowGateway, isDark, onToggleDark, sidebarOpen, onToggleSidebar, rightPanelOpen, onToggleRightPanel }: ToolbarProps) {
   const { nodes, edges, workflowMeta, setWorkflowMeta, setNodes, setEdges } = useWorkflowStore()
+  const gatewayStatus = useGatewayStore((s) => s.status)
+
+  const statusDotColor: Record<typeof gatewayStatus, string> = {
+    connected: 'bg-green-500',
+    connecting: 'bg-yellow-500 animate-pulse',
+    error: 'bg-red-500',
+    disconnected: 'bg-gray-600',
+  }
   const nodeCount = nodes.length
   const edgeCount = edges.length
 
@@ -56,6 +67,14 @@ function Toolbar({ onShowTemplates, isDark, onToggleDark, sidebarOpen, onToggleS
         {nodeCount} {nodeCount === 1 ? 'node' : 'nodes'}
         {edgeCount > 0 ? `, ${edgeCount} ${edgeCount === 1 ? 'edge' : 'edges'}` : ''}
       </span>
+      <button
+        onClick={onShowGateway}
+        className="flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-gray-800 transition-colors"
+        title={`Gateway: ${gatewayStatus}`}
+      >
+        <span className={`w-2 h-2 rounded-full ${statusDotColor[gatewayStatus]}`} />
+        <span className="text-xs text-gray-500">Gateway</span>
+      </button>
       <div className="ml-auto flex items-center gap-1">
         <button
           onClick={onShowTemplates}
@@ -160,6 +179,7 @@ function RightPanel() {
 export default function App() {
   const nodeCount = useWorkflowStore((s) => s.nodes.length)
   const [showTemplates, setShowTemplates] = useState(false)
+  const [showGateway, setShowGateway] = useState(false)
   const [isDark, setIsDark] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
@@ -170,6 +190,11 @@ export default function App() {
       setShowTemplates(true)
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Initialize gateway connection from saved config
+  useEffect(() => {
+    useGatewayStore.getState().init()
+  }, [])
 
   const theme = isDark
     ? {
@@ -192,6 +217,7 @@ export default function App() {
           <div className={`h-10 flex-shrink-0 flex items-center px-4 ${theme.toolbar}`}>
             <Toolbar
               onShowTemplates={() => setShowTemplates(true)}
+              onShowGateway={() => setShowGateway(true)}
               isDark={isDark}
               onToggleDark={() => setIsDark((v) => !v)}
               sidebarOpen={sidebarOpen}
@@ -211,6 +237,11 @@ export default function App() {
         {/* Template picker modal */}
         {showTemplates && (
           <TemplatePickerModal onClose={() => setShowTemplates(false)} />
+        )}
+
+        {/* Gateway connection panel */}
+        {showGateway && (
+          <GatewayPanel onClose={() => setShowGateway(false)} />
         )}
       </div>
     </ReactFlowProvider>

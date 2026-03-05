@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "meta": {
+    "name": "approval-pipeline",
+    "description": "Read a file, have an agent review it, require human approval, then notify on completion"
+  },
+  "nodes": [
+    {
+      "id": "read",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 60 },
+      "data": {
+        "actionId": "read-file",
+        "config": {
+          "path": "report.md"
+        }
+      }
+    },
+    {
+      "id": "review",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 220 },
+      "data": {
+        "actionId": "call-agent",
+        "config": {
+          "agent": "soren",
+          "task": "Review this document and identify any issues or risks. Provide a brief assessment."
+        }
+      }
+    },
+    {
+      "id": "approve",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 380 },
+      "data": {
+        "actionId": "require-approval",
+        "config": {
+          "message": "Agent review complete. Please review the assessment and approve to continue.",
+          "approver": ""
+        }
+      }
+    },
+    {
+      "id": "notify",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 540 },
+      "data": {
+        "actionId": "send-notification",
+        "config": {
+          "channel": "email",
+          "recipient": "team@example.com",
+          "message": "Approval pipeline completed successfully."
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "read",
+      "sourceHandle": "output",
+      "target": "review",
+      "targetHandle": "input"
+    },
+    {
+      "id": "e2",
+      "source": "review",
+      "sourceHandle": "output",
+      "target": "approve",
+      "targetHandle": "input"
+    },
+    {
+      "id": "e3",
+      "source": "approve",
+      "sourceHandle": "output",
+      "target": "notify",
+      "targetHandle": "input"
+    }
+  ]
+}

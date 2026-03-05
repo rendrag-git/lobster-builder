@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "meta": {
+    "name": "pr-monitor",
+    "description": "Monitor GitHub PRs, evaluate conditions, and send notifications"
+  },
+  "nodes": [
+    {
+      "id": "fetch-prs",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 80 },
+      "data": {
+        "actionId": "web-fetch",
+        "config": {
+          "url": "https://api.github.com/repos/owner/repo/pulls",
+          "mode": "markdown"
+        }
+      }
+    },
+    {
+      "id": "check-condition",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 240 },
+      "data": {
+        "actionId": "conditional-branch",
+        "config": {
+          "condition": "${input} != ''",
+          "trueLabel": "Has PRs",
+          "falseLabel": "No PRs"
+        }
+      }
+    },
+    {
+      "id": "notify-team",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 400 },
+      "data": {
+        "actionId": "send-notification",
+        "config": {
+          "channel": "slack",
+          "recipient": "#engineering",
+          "message": "New PR(s) need review!"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "fetch-prs",
+      "sourceHandle": "output",
+      "target": "check-condition",
+      "targetHandle": "input"
+    },
+    {
+      "id": "e2",
+      "source": "check-condition",
+      "sourceHandle": "true",
+      "target": "notify-team",
+      "targetHandle": "input"
+    }
+  ]
+}

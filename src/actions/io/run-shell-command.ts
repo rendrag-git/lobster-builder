@@ -1,0 +1,32 @@
+import { registerAction } from '../registry';
+import type { ActionDefinition } from '../../types/actions';
+
+const runShellCommand: ActionDefinition = {
+  id: 'run-shell-command',
+  name: 'Run Shell Command',
+  category: 'io',
+  icon: 'terminal',
+  description: 'Execute an arbitrary shell command',
+  inputs: [{ id: 'input', label: 'Stdin', kind: 'text' }],
+  outputs: [
+    { id: 'stdout', label: 'Stdout', kind: 'text' },
+    { id: 'stderr', label: 'Stderr', kind: 'text' },
+  ],
+  configFields: [
+    { id: 'command', label: 'Command', type: 'code', required: true, placeholder: 'echo "hello"' },
+    { id: 'cwd', label: 'Working Directory', type: 'text', placeholder: '/path/to/dir' },
+  ],
+  defaults: { command: '', cwd: '' },
+  compile: (config, ctx) => {
+    const step: any = {
+      id: ctx.nodeId,
+      command: `openclaw exec --cmd '${config.command}'${config.cwd ? ` --cwd '${config.cwd}'` : ''}`,
+    };
+    if (ctx.incomingEdges.length > 0) {
+      step.stdin = `$${ctx.incomingEdges[0].sourceNodeId}.stdout`;
+    }
+    return [step];
+  },
+};
+
+registerAction(runShellCommand);

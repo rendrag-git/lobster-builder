@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "meta": {
+    "name": "hello-world",
+    "description": "A minimal starter workflow that echoes a greeting"
+  },
+  "nodes": [
+    {
+      "id": "step-1",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 100 },
+      "data": {
+        "actionId": "run-shell-command",
+        "config": { "command": "echo \"Hello from Lobster!\"", "cwd": "" }
+      }
+    },
+    {
+      "id": "step-2",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 260 },
+      "data": {
+        "actionId": "json-renderer",
+        "config": { "pretty": true }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "step-1",
+      "sourceHandle": "stdout",
+      "target": "step-2",
+      "targetHandle": "input"
+    }
+  ]
+}

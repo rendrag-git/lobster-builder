@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "meta": {
+    "name": "ai-research",
+    "description": "Search the web, summarize findings with an LLM, and save to a file"
+  },
+  "nodes": [
+    {
+      "id": "search",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 80 },
+      "data": {
+        "actionId": "web-search",
+        "config": {
+          "query": "latest AI news",
+          "count": 5
+        }
+      }
+    },
+    {
+      "id": "summarize",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 240 },
+      "data": {
+        "actionId": "prompt-llm",
+        "config": {
+          "model": "sonnet",
+          "prompt": "Summarize these search results into 3 key insights:\n\n${input}"
+        }
+      }
+    },
+    {
+      "id": "save",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 400 },
+      "data": {
+        "actionId": "write-file",
+        "config": {
+          "path": "research-summary.md",
+          "content": "${input}"
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "source": "search",
+      "sourceHandle": "output",
+      "target": "summarize",
+      "targetHandle": "input"
+    },
+    {
+      "id": "e2",
+      "source": "summarize",
+      "sourceHandle": "output",
+      "target": "save",
+      "targetHandle": "input"
+    }
+  ]
+}

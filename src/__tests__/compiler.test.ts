@@ -130,6 +130,38 @@ describe('conditional-branch', () => {
   });
 });
 
+describe('loop-for-each', () => {
+  it('generates while-loop with exit condition and self-reference', () => {
+    const nodes = [
+      makeNode('loop1', 'loop-for-each', { exitCondition: '$check.json.done == true', maxIterations: 5 }),
+      makeNode('after', 'run-shell-command', { command: 'echo done' }),
+    ];
+    const edges = [makeEdge('loop1', 'after', 'done', 'input')];
+    const result = compile(nodes, edges, { name: 'test' });
+    const step = result.steps.find((s) => s.id === 'loop1')!;
+    expect(step.command).toBe('exec --shell "true"');
+    expect(step.max_iterations).toBe(5);
+    expect(step.flow).toEqual([
+      { when: '$check.json.done == true', goto: 'after' },
+      { default: 'loop1' },
+    ]);
+  });
+
+  it('default: self always present even without exit condition', () => {
+    const nodes = [makeNode('loop1', 'loop-for-each', { maxIterations: 3 })];
+    const result = compile(nodes, [], { name: 'test' });
+    const step = result.steps[0];
+    expect(step.flow).toEqual([{ default: 'loop1' }]);
+    expect(step.max_iterations).toBe(3);
+  });
+
+  it('default max_iterations is 10 when not specified', () => {
+    const nodes = [makeNode('loop1', 'loop-for-each', {})];
+    const result = compile(nodes, [], { name: 'test' });
+    expect(result.steps[0].max_iterations).toBe(10);
+  });
+});
+
 describe('compileToYaml()', () => {
   it('produces valid YAML string with name and steps', () => {
     const nodes = [makeNode('n1', 'run-shell-command', { command: 'echo hi' })];

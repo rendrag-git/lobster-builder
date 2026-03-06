@@ -1,30 +1,52 @@
 import { registerAction } from '../registry';
 import type { ActionDefinition } from '../../types/actions';
+import type { FlowRule } from '../../types/lobster';
 
 const loopForEach: ActionDefinition = {
   id: 'loop-for-each',
-  name: 'Loop: For Each',
+  name: 'While Loop',
   category: 'flow',
   icon: 'repeat',
-  description: 'Iterate over a list and run a sub-workflow for each item',
-  inputs: [{ id: 'input', label: 'Items', kind: 'data' }],
+  description: 'Loops until an exit condition is true. Uses Lobster flow directives with a self-referential default.',
+  inputs: [{ id: 'input', label: 'Input', kind: 'data' }],
   outputs: [
-    { id: 'item', label: 'Current Item', kind: 'data' },
     { id: 'done', label: 'Done', kind: 'trigger' },
   ],
   configFields: [
-    { id: 'variable', label: 'Item Variable Name', type: 'text', placeholder: 'item' },
+    {
+      id: 'exitCondition',
+      label: 'Exit Condition',
+      type: 'text',
+      placeholder: '$my_step.json.done == true',
+      description: 'Lobster condition that exits the loop. Leave empty for infinite loop (capped by Max Iterations).',
+    },
+    {
+      id: 'maxIterations',
+      label: 'Max Iterations',
+      type: 'number',
+      defaultValue: 10,
+    },
   ],
-  defaults: { variable: 'item' },
+  defaults: { exitCondition: '', maxIterations: 10 },
   compile: (config, ctx) => {
-    const step: any = {
-      id: ctx.nodeId,
-      command: `openclaw flow foreach --variable '${config.variable ?? 'item'}'`,
-    };
-    if (ctx.incomingEdges.length > 0) {
-      step.stdin = `$${ctx.incomingEdges[0].sourceNodeId}.stdout`;
+    const doneTarget = ctx.outgoingEdges.find((e) => e.sourcePortId === 'done')?.targetNodeId;
+    const maxIter = typeof config.maxIterations === 'number' ? config.maxIterations : 10;
+
+    const flow: FlowRule[] = [];
+    if (config.exitCondition && doneTarget) {
+      flow.push({ when: String(config.exitCondition), goto: doneTarget });
     }
-    return [step];
+    flow.push({ default: ctx.nodeId });
+
+    return [{
+      id: ctx.nodeId,
+      command: 'exec --shell "true"',
+      max_iterations: maxIter,
+      flow,
+      ...(ctx.incomingEdges.length > 0
+        ? { stdin: `$${ctx.incomingEdges[0].sourceNodeId}.stdout` }
+        : {}),
+    }];
   },
 };
 

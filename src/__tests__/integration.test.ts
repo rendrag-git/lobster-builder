@@ -190,7 +190,7 @@ describe('action catalog completeness', () => {
     const all = getAllActions();
     expect(all.length).toBeGreaterThanOrEqual(20);
     for (const action of all) {
-      const steps = action.compile(action.defaults, { nodeId: 'test', incomingEdges: [] });
+      const steps = action.compile(action.defaults, { nodeId: 'test', incomingEdges: [], outgoingEdges: [] });
       expect(Array.isArray(steps)).toBe(true);
     }
   });

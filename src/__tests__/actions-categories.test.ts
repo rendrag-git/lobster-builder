@@ -11,7 +11,7 @@ describe('Flow actions', () => {
     expect(action).toBeDefined();
     const steps = action!.compile(
       { condition: '${score} > 80' },
-      { nodeId: 'n1', incomingEdges: [] },
+      { nodeId: 'n1', incomingEdges: [], outgoingEdges: [] },
     );
     expect(steps).toHaveLength(1);
     expect(steps[0].command).toContain('${score} > 80');
@@ -21,7 +21,7 @@ describe('Flow actions', () => {
     const action = getAction('delay-wait');
     const steps = action!.compile(
       { duration: 30, unit: 'seconds' },
-      { nodeId: 'n2', incomingEdges: [] },
+      { nodeId: 'n2', incomingEdges: [], outgoingEdges: [] },
     );
     expect(steps[0].command).toContain('30');
     expect(steps[0].command).toContain('seconds');
@@ -37,7 +37,7 @@ describe('Data actions', () => {
     const action = getAction('set-variable');
     const steps = action!.compile(
       { name: 'result', value: '42' },
-      { nodeId: 'n3', incomingEdges: [] },
+      { nodeId: 'n3', incomingEdges: [], outgoingEdges: [] },
     );
     expect(steps[0].command).toContain('result');
     expect(steps[0].command).toContain('42');
@@ -47,7 +47,7 @@ describe('Data actions', () => {
     const action = getAction('json-renderer');
     const steps = action!.compile(
       { template: '{"msg":"${input}"}' },
-      { nodeId: 'n4', incomingEdges: [] },
+      { nodeId: 'n4', incomingEdges: [], outgoingEdges: [] },
     );
     expect(steps[0].command).toContain('{"msg":"${input}"}');
   });
@@ -62,7 +62,7 @@ describe('IO actions', () => {
     const action = getAction('run-shell-command');
     const steps = action!.compile(
       { command: 'ls -la' },
-      { nodeId: 'n5', incomingEdges: [] },
+      { nodeId: 'n5', incomingEdges: [], outgoingEdges: [] },
     );
     expect(steps[0].command).toContain('ls -la');
   });
@@ -71,7 +71,7 @@ describe('IO actions', () => {
     const action = getAction('http-request');
     const steps = action!.compile(
       { method: 'POST', url: 'https://api.example.com/data' },
-      { nodeId: 'n6', incomingEdges: [] },
+      { nodeId: 'n6', incomingEdges: [], outgoingEdges: [] },
     );
     expect(steps[0].command).toContain('POST');
     expect(steps[0].command).toContain('https://api.example.com/data');
@@ -84,6 +84,7 @@ describe('IO actions', () => {
       {
         nodeId: 'n7',
         incomingEdges: [{ sourceNodeId: 'n6', sourcePortId: 'output', targetPortId: 'input' }],
+        outgoingEdges: [],
       },
     );
     expect(steps[0].stdin).toBe('$n6.stdout');
@@ -99,7 +100,7 @@ describe('Meta actions', () => {
     const action = getAction('run-sub-workflow');
     const steps = action!.compile(
       { file: 'workflows/process-order.lobster' },
-      { nodeId: 'n8', incomingEdges: [] },
+      { nodeId: 'n8', incomingEdges: [], outgoingEdges: [] },
     );
     expect(steps[0].command).toContain('process-order.lobster');
   });

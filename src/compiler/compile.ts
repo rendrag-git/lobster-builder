@@ -49,7 +49,15 @@ export function compile(
         targetPortId: e.targetHandle ?? 'input',
       }));
 
-    const ctx = { nodeId: node.id, incomingEdges };
+    const outgoingEdges = edges
+      .filter((e) => e.source === node.id)
+      .map((e) => ({
+        targetNodeId: e.target,
+        sourcePortId: e.sourceHandle ?? 'output',
+        targetPortId: e.targetHandle ?? 'input',
+      }));
+
+    const ctx = { nodeId: node.id, incomingEdges, outgoingEdges };
     const produced = action.compile(node.data.config, ctx);
     steps.push(...produced);
   }

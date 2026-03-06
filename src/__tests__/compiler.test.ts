@@ -17,8 +17,8 @@ function makeNode(id: string, actionId: string, config: Record<string, unknown> 
   };
 }
 
-function makeEdge(source: string, target: string): WorkflowEdge {
-  return { id: `${source}->${target}`, source, target, sourceHandle: 'output', targetHandle: 'input' };
+function makeEdge(source: string, target: string, sourceHandle = 'output', targetHandle = 'input'): WorkflowEdge {
+  return { id: `${source}->${target}-${sourceHandle}`, source, target, sourceHandle, targetHandle };
 }
 
 describe('compile()', () => {
@@ -77,6 +77,16 @@ describe('compile()', () => {
     const nodes = [makeNode('n1', 'nonexistent-action')];
     const result = compile(nodes, [], meta);
     expect(result.steps).toHaveLength(0);
+  });
+
+  it('two-node workflow compiles with outgoingEdges populated', () => {
+    const nodes = [
+      makeNode('a', 'run-shell-command', { command: 'echo hello' }),
+      makeNode('b', 'run-shell-command', { command: 'echo world' }),
+    ];
+    const edges = [makeEdge('a', 'b', 'output', 'input')];
+    const result = compile(nodes, edges, { name: 'test' });
+    expect(result.steps).toHaveLength(2);
   });
 });
 

@@ -28,7 +28,7 @@ describe('ActionDefinition', () => {
 
     expect(action.id).toBe('prompt-llm')
     expect(action.category).toBe('ai')
-    expect(action.compile({}, { nodeId: 'node-1', incomingEdges: [] })).toEqual([
+    expect(action.compile({}, { nodeId: 'node-1', incomingEdges: [], outgoingEdges: [] })).toEqual([
       { id: 'node-1', command: 'claude' },
     ])
   })

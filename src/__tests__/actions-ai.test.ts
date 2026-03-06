@@ -12,7 +12,7 @@ describe('AI actions', () => {
     expect(action).toBeDefined();
     const steps = action!.compile(
       { agent: 'soren', task: 'review this PR' },
-      { nodeId: 'n1', incomingEdges: [] },
+      { nodeId: 'n1', incomingEdges: [], outgoingEdges: [] },
     );
     expect(steps).toHaveLength(1);
     expect(steps[0].command).toContain('soren');
@@ -23,7 +23,7 @@ describe('AI actions', () => {
     const action = getAction('prompt-llm');
     const steps = action!.compile(
       { model: 'sonnet', prompt: 'summarize this' },
-      { nodeId: 'n2', incomingEdges: [] },
+      { nodeId: 'n2', incomingEdges: [], outgoingEdges: [] },
     );
     expect(steps).toHaveLength(1);
     expect(steps[0].command).toContain('sonnet');
@@ -34,7 +34,7 @@ describe('AI actions', () => {
     const action = getAction('web-search');
     const steps = action!.compile(
       { query: 'lobster workflow engine', count: 5 },
-      { nodeId: 'n3', incomingEdges: [] },
+      { nodeId: 'n3', incomingEdges: [], outgoingEdges: [] },
     );
     expect(steps).toHaveLength(1);
     expect(steps[0].command).toContain('lobster workflow engine');
@@ -47,6 +47,7 @@ describe('AI actions', () => {
       {
         nodeId: 'n2',
         incomingEdges: [{ sourceNodeId: 'n1', sourcePortId: 'output', targetPortId: 'input' }],
+        outgoingEdges: [],
       },
     );
     expect(steps).toHaveLength(1);

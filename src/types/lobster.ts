@@ -7,6 +7,10 @@ export interface LobsterArgDef {
   description?: string
 }
 
+export type FlowRule =
+  | { when: string; goto: string }
+  | { default: string }
+
 export interface LobsterStep {
   id: string
   command: string
@@ -16,6 +20,8 @@ export interface LobsterStep {
   approval?: boolean | 'required'
   condition?: string
   when?: string
+  flow?: FlowRule[]
+  max_iterations?: number
 }
 
 export interface LobsterWorkflowFile {

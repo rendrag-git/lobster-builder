@@ -26,8 +26,13 @@ const mockDiscovery = {
 function mockFetchWithDiscovery() {
   vi.stubGlobal(
     'fetch',
-    vi.fn().mockImplementation((_url, opts) => {
-      const body = JSON.parse(opts.body)
+    vi.fn().mockImplementation((url: string, opts?: { body?: string }) => {
+      // Phase 2: return 404 to trigger Phase 1 fallback
+      if ((url as string).includes('/api/discover')) {
+        return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found', json: () => Promise.resolve({}) })
+      }
+      // Phase 1 tool invocations
+      const body = JSON.parse(opts?.body ?? '{}')
       if (body.tool === 'agents_list') {
         return Promise.resolve({
           ok: true,

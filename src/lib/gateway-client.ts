@@ -78,7 +78,33 @@ function extractModels(statusResult: unknown): DiscoveryData['models'] {
   return models
 }
 
+async function fetchDiscoverEndpoint(config: GatewayConfig): Promise<DiscoveryData> {
+  const base = config.url || ''
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  try {
+    const res = await fetch(`${base}/api/discover`, {
+      headers: { Authorization: `Bearer ${config.token}` },
+      signal: controller.signal,
+    })
+    if (res.status === 404) throw new Error('404: /api/discover not available')
+    if (!res.ok) throw new Error(`Gateway ${res.status}: ${res.statusText}`)
+    return await res.json() as DiscoveryData
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export async function discover(config: GatewayConfig): Promise<DiscoveryData> {
+  // Try Phase 2 endpoint first
+  try {
+    return await fetchDiscoverEndpoint(config)
+  } catch (err) {
+    if (!(err instanceof Error) || !err.message.startsWith('404')) throw err
+    console.info('[gateway] /api/discover not available, using Phase 1 fallback')
+  }
+
+  // Phase 1 fallback: agents_list + session_status
   // agents_list is the primary call — if it throws (e.g. 401), propagate the error
   const [agentsSettled, statusSettled] = await Promise.allSettled([
     invokeGatewayTool(config, 'agents_list'),
@@ -111,9 +137,6 @@ export async function discover(config: GatewayConfig): Promise<DiscoveryData> {
       }
     }
   }
-
-  // Phase 1: channels, skills, tools are empty — requires Gateway /api/discover (Phase 2)
-  console.info('[gateway] Phase 1: channels, skills, tools require Gateway /api/discover (Phase 2)')
 
   return {
     agents,

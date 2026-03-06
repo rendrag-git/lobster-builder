@@ -23,7 +23,7 @@ afterEach(() => {
 })
 
 describe('discover()', () => {
-  it('maps agents_list and session_status results into DiscoveryData', async () => {
+  it('maps agents_list and session_status results into DiscoveryData (Phase 1 fallback)', async () => {
     const agentsResult = {
       agents: [
         { id: 'soren', name: 'Soren' },
@@ -35,12 +35,17 @@ describe('discover()', () => {
       model_alias: 'sonnet',
     }
 
-    let callCount = 0
+    let toolCallCount = 0
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((_url, opts) => {
-        callCount++
-        const body = JSON.parse(opts.body)
+      vi.fn().mockImplementation((url: string, opts?: { body?: string }) => {
+        // Phase 2 /api/discover: return 404 to trigger fallback
+        if ((url as string).includes('/api/discover')) {
+          return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found', json: () => Promise.resolve({}) })
+        }
+        // Phase 1 tool invocations
+        toolCallCount++
+        const body = JSON.parse(opts?.body ?? '{}')
         const result = body.tool === 'agents_list' ? agentsResult : statusResult
         return Promise.resolve({
           ok: true,
@@ -51,7 +56,7 @@ describe('discover()', () => {
 
     const data = await discover(mockConfig)
 
-    expect(callCount).toBe(2)
+    expect(toolCallCount).toBe(2)
     expect(data.agents).toHaveLength(2)
     expect(data.agents[0]).toEqual({ id: 'soren', name: 'Soren', default: undefined })
     expect(data.agents[1]).toEqual({ id: 'atlas', name: 'Atlas', default: true })
@@ -63,6 +68,47 @@ describe('discover()', () => {
     expect(data.tools).toEqual([])
   })
 
+  it('uses /api/discover when available and returns channels', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({
+          agents: [{ id: 'main', default: true, name: 'Main Agent' }],
+          models: [],
+          channels: [{ id: 'discord', enabled: true, type: 'discord' }],
+          skills: [],
+          tools: [],
+        }),
+      }),
+    )
+    const result = await discover(mockConfig)
+    expect(result.channels).toHaveLength(1)
+    expect(result.channels[0].id).toBe('discord')
+    expect(result.agents).toHaveLength(1)
+  })
+
+  it('falls back to Phase 1 when /api/discover returns 404', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string, opts?: { body?: string }) => {
+        if ((url as string).includes('/api/discover')) {
+          return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found', json: () => Promise.resolve({}) })
+        }
+        const body = JSON.parse(opts?.body ?? '{}')
+        const result = body.tool === 'agents_list'
+          ? { agents: [{ id: 'main' }] }
+          : {}
+        return Promise.resolve({ ok: true, json: () => Promise.resolve({ ok: true, result }) })
+      }),
+    )
+    const result = await discover(mockConfig)
+    // Phase 1 fallback does not populate channels
+    expect(result.channels).toHaveLength(0)
+    expect(result.agents).toHaveLength(1)
+  })
+
   it('throws on 401 auth failure', async () => {
     vi.stubGlobal('fetch', mockFetchHttpError(401, 'Unauthorized'))
     await expect(discover(mockConfig)).rejects.toThrow('Gateway 401')
@@ -71,8 +117,12 @@ describe('discover()', () => {
   it('handles partial failures gracefully (one tool fails, other succeeds)', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockImplementation((_url, opts) => {
-        const body = JSON.parse(opts.body)
+      vi.fn().mockImplementation((url: string, opts?: { body?: string }) => {
+        // Phase 2: return 404 to trigger fallback
+        if ((url as string).includes('/api/discover')) {
+          return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found', json: () => Promise.resolve({}) })
+        }
+        const body = JSON.parse(opts?.body ?? '{}')
         if (body.tool === 'agents_list') {
           return Promise.resolve({
             ok: true,
@@ -92,9 +142,16 @@ describe('discover()', () => {
   it('handles tool-level errors (ok: false) gracefully', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ ok: false, error: { message: 'Not permitted' } }),
+      vi.fn().mockImplementation((url: string) => {
+        // Phase 2: return 404 to trigger fallback
+        if ((url as string).includes('/api/discover')) {
+          return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found', json: () => Promise.resolve({}) })
+        }
+        // Phase 1 tool call returns ok: false
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ ok: false, error: { message: 'Not permitted' } }),
+        })
       }),
     )
 

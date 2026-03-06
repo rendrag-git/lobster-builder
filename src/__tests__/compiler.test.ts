@@ -162,6 +162,33 @@ describe('loop-for-each', () => {
   });
 });
 
+describe('run-sub-workflow', () => {
+  it('generates lobster.run --file command', () => {
+    const nodes = [makeNode('sub1', 'run-sub-workflow', { file: 'workflows/child.lobster' })];
+    const result = compile(nodes, [], { name: 'test' });
+    expect(result.steps[0].command).toBe("lobster.run --file 'workflows/child.lobster'");
+  });
+
+  it('generates lobster.run --name command', () => {
+    const nodes = [makeNode('sub1', 'run-sub-workflow', { name: 'analyze' })];
+    const result = compile(nodes, [], { name: 'test' });
+    expect(result.steps[0].command).toBe("lobster.run --name 'analyze'");
+  });
+
+  it('includes --args-json flag when argsJson provided', () => {
+    const nodes = [makeNode('sub1', 'run-sub-workflow', { name: 'analyze', argsJson: '{"x":1}' })];
+    const result = compile(nodes, [], { name: 'test' });
+    expect(result.steps[0].command).toBe(`lobster.run --name 'analyze' --args-json '{"x":1}'`);
+  });
+
+  it('file takes precedence over name when both provided', () => {
+    const nodes = [makeNode('sub1', 'run-sub-workflow', { file: 'w/a.lobster', name: 'ignored' })];
+    const result = compile(nodes, [], { name: 'test' });
+    expect(result.steps[0].command).toContain("--file 'w/a.lobster'");
+    expect(result.steps[0].command).not.toContain('--name');
+  });
+});
+
 describe('compileToYaml()', () => {
   it('produces valid YAML string with name and steps', () => {
     const nodes = [makeNode('n1', 'run-shell-command', { command: 'echo hi' })];

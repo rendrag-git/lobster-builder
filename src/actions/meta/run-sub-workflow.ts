@@ -10,19 +10,44 @@ const runSubWorkflow: ActionDefinition = {
   inputs: [{ id: 'input', label: 'Input', kind: 'any' }],
   outputs: [{ id: 'output', label: 'Result', kind: 'any' }],
   configFields: [
-    { id: 'file', label: 'Workflow File', type: 'text', required: true, placeholder: 'workflows/my-workflow.lobster' },
-    { id: 'passInput', label: 'Pass Input', type: 'boolean' },
+    {
+      id: 'file',
+      label: 'Workflow File',
+      type: 'text',
+      placeholder: 'workflows/my-workflow.lobster',
+      description: 'Path to .lobster file. Takes precedence over Name if both set.',
+    },
+    {
+      id: 'name',
+      label: 'Workflow Name',
+      type: 'text',
+      placeholder: 'my-workflow',
+      description: 'Alternative to File path. Mutually exclusive — File takes precedence if both set.',
+    },
+    {
+      id: 'argsJson',
+      label: 'Args JSON',
+      type: 'textarea',
+      placeholder: '{"key": "$prev_step.json.value"}',
+      description: 'Pass data to child workflow. Use Lobster ref syntax for dynamic values.',
+    },
   ],
-  defaults: { file: '', passInput: true },
-  compile: (config, ctx) => {
-    const step: any = {
-      id: ctx.nodeId,
-      command: `openclaw workflow run --file '${config.file}'`,
-    };
-    if (ctx.incomingEdges.length > 0 && config.passInput !== false) {
-      step.stdin = `$${ctx.incomingEdges[0].sourceNodeId}.stdout`;
-    }
-    return [step];
+  defaults: { file: '', name: '', argsJson: '' },
+  compile: (config, _ctx) => {
+    const target = config.file
+      ? `--file '${config.file}'`
+      : config.name
+      ? `--name '${config.name}'`
+      : `--name ???`;
+
+    const argsFlag = config.argsJson
+      ? ` --args-json '${config.argsJson}'`
+      : '';
+
+    return [{
+      id: _ctx.nodeId,
+      command: `lobster.run ${target}${argsFlag}`,
+    }];
   },
 };
 

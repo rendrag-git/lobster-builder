@@ -90,6 +90,46 @@ describe('compile()', () => {
   });
 });
 
+describe('conditional-branch', () => {
+  it('generates flow rules from connected true/false ports', () => {
+    const nodes = [
+      makeNode('branch1', 'conditional-branch', { condition: '$check.json.ok == true' }),
+      makeNode('yes', 'run-shell-command', { command: 'echo yes' }),
+      makeNode('no', 'run-shell-command', { command: 'echo no' }),
+    ];
+    const edges = [
+      makeEdge('branch1', 'yes', 'true', 'input'),
+      makeEdge('branch1', 'no', 'false', 'input'),
+    ];
+    const result = compile(nodes, edges, { name: 'test' });
+    const step = result.steps.find((s) => s.id === 'branch1')!;
+    expect(step.command).toBe('exec --shell "true"');
+    expect(step.flow).toEqual([
+      { when: '$check.json.ok == true', goto: 'yes' },
+      { default: 'no' },
+    ]);
+  });
+
+  it('no flow property when no outgoing edges', () => {
+    const nodes = [makeNode('branch1', 'conditional-branch', { condition: 'x' })];
+    const result = compile(nodes, [], { name: 'test' });
+    expect(result.steps[0].flow).toBeUndefined();
+  });
+
+  it('only true-branch flow when only true port connected', () => {
+    const nodes = [
+      makeNode('branch1', 'conditional-branch', { condition: '$x.json.y == 1' }),
+      makeNode('target', 'run-shell-command', { command: 'echo ok' }),
+    ];
+    const edges = [makeEdge('branch1', 'target', 'true', 'input')];
+    const result = compile(nodes, edges, { name: 'test' });
+    const step = result.steps.find((s) => s.id === 'branch1')!;
+    expect(step.flow).toEqual([
+      { when: '$x.json.y == 1', goto: 'target' },
+    ]);
+  });
+});
+
 describe('compileToYaml()', () => {
   it('produces valid YAML string with name and steps', () => {
     const nodes = [makeNode('n1', 'run-shell-command', { command: 'echo hi' })];

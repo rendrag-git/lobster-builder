@@ -1,5 +1,6 @@
 import { registerAction } from '../registry';
 import type { ActionDefinition } from '../../types/actions';
+import type { FlowRule } from '../../types/lobster';
 
 const conditionalBranch: ActionDefinition = {
   id: 'conditional-branch',
@@ -13,14 +14,37 @@ const conditionalBranch: ActionDefinition = {
     { id: 'false', label: 'False', kind: 'any' },
   ],
   configFields: [
-    { id: 'condition', label: 'Condition', type: 'text', required: true, placeholder: '${score} > 80' },
+    {
+      id: 'condition',
+      label: 'Condition',
+      type: 'text',
+      required: true,
+      placeholder: '$prev_step.json.score > 80',
+      description: 'Lobster condition syntax: $stepId.json.field operator value',
+    },
   ],
   defaults: { condition: '' },
-  compile: (config, ctx) => [{
-    id: ctx.nodeId,
-    command: `openclaw flow branch --condition '${config.condition}'`,
-    ...(ctx.incomingEdges.length > 0 ? { stdin: `$${ctx.incomingEdges[0].sourceNodeId}.stdout` } : {}),
-  }],
+  compile: (config, ctx) => {
+    const trueTarget = ctx.outgoingEdges.find((e) => e.sourcePortId === 'true')?.targetNodeId;
+    const falseTarget = ctx.outgoingEdges.find((e) => e.sourcePortId === 'false')?.targetNodeId;
+
+    const flow: FlowRule[] = [];
+    if (config.condition && trueTarget) {
+      flow.push({ when: String(config.condition), goto: trueTarget });
+    }
+    if (falseTarget) {
+      flow.push({ default: falseTarget });
+    }
+
+    return [{
+      id: ctx.nodeId,
+      command: 'exec --shell "true"',
+      ...(flow.length > 0 ? { flow } : {}),
+      ...(ctx.incomingEdges.length > 0
+        ? { stdin: `$${ctx.incomingEdges[0].sourceNodeId}.stdout` }
+        : {}),
+    }];
+  },
 };
 
 registerAction(conditionalBranch);

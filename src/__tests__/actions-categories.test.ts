@@ -14,7 +14,9 @@ describe('Flow actions', () => {
       { nodeId: 'n1', incomingEdges: [], outgoingEdges: [] },
     );
     expect(steps).toHaveLength(1);
-    expect(steps[0].command).toContain('${score} > 80');
+    expect(steps[0].command).toBe('exec --shell "true"');
+    // condition goes into flow rules when outgoing edges are connected; no flow when none connected
+    expect(steps[0].flow).toBeUndefined();
   });
 
   it('delay-wait compiles with duration and unit', () => {

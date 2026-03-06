@@ -43,6 +43,11 @@ export interface CompileContext {
     sourcePortId: string
     targetPortId: string
   }>
+  outgoingEdges: Array<{
+    targetNodeId: string
+    sourcePortId: string
+    targetPortId: string
+  }>
 }
 
 export interface ActionDefinition {

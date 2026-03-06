@@ -30,6 +30,8 @@ export interface ConfigField {
   placeholder?: string
   defaultValue?: unknown
   options?: ConfigFieldOption[]
+  /** Help text shown below the field */
+  description?: string
   /** Whether this field is required */
   required?: boolean
   /** When set, populates select options from live Gateway discovery data */

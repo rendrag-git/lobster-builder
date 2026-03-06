@@ -198,4 +198,18 @@ describe('compileToYaml()', () => {
     expect(yaml).toContain('steps:');
     expect(yaml).toContain('echo hi');
   });
+
+  it('serializes flow rules and max_iterations correctly', () => {
+    const nodes = [
+      makeNode('loop1', 'loop-for-each', { exitCondition: '$prev.json.ok == true', maxIterations: 5 }),
+      makeNode('after', 'run-shell-command', { command: 'echo done' }),
+    ];
+    const edges = [makeEdge('loop1', 'after', 'done', 'input')];
+    const yaml = compileToYaml(nodes, edges, { name: 'test' });
+    expect(yaml).toContain('flow:');
+    expect(yaml).toContain('max_iterations: 5');
+    expect(yaml).toContain('goto: after');
+    expect(yaml).toContain('default: loop1');
+    expect(yaml).toContain('when: $prev.json.ok == true');
+  });
 });

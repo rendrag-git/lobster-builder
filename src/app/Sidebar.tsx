@@ -3,6 +3,7 @@ import {
   Bot, Sparkles, Search, Globe, Image, GitBranch, CheckSquare, Clock,
   RotateCw, AlertTriangle, Variable, Filter, Shuffle, Merge, Braces,
   Terminal, Wifi, FileText, Save, Bell, Workflow, ChevronDown, ChevronRight,
+  MessageCircle, Wrench,
 } from 'lucide-react'
 import { getAllActions } from '../actions/init'
 import type { ActionDefinition, ActionCategory } from '../types/actions'
@@ -30,6 +31,8 @@ const ICON_MAP: Record<string, LucideIcon> = {
   save: Save,
   bell: Bell,
   workflow: Workflow,
+  message: MessageCircle,
+  wrench: Wrench,
 }
 
 const CATEGORY_META: Record<ActionCategory, { label: string; color: string; dot: string }> = {
@@ -37,10 +40,11 @@ const CATEGORY_META: Record<ActionCategory, { label: string; color: string; dot:
   flow: { label: 'Flow', color: 'text-blue-400',   dot: 'bg-blue-500' },
   data: { label: 'Data', color: 'text-green-400',  dot: 'bg-green-500' },
   io:   { label: 'I/O',  color: 'text-orange-400', dot: 'bg-orange-500' },
+  openclaw: { label: 'OpenClaw', color: 'text-cyan-400', dot: 'bg-cyan-500' },
   meta: { label: 'Meta', color: 'text-gray-400',   dot: 'bg-gray-500' },
 }
 
-const CATEGORY_ORDER: ActionCategory[] = ['ai', 'flow', 'data', 'io', 'meta']
+const CATEGORY_ORDER: ActionCategory[] = ['ai', 'flow', 'data', 'io', 'openclaw', 'meta']
 
 function ActionItem({ action }: { action: ActionDefinition }) {
   const Icon: LucideIcon = ICON_MAP[action.icon] ?? Terminal
@@ -57,6 +61,7 @@ function ActionItem({ action }: { action: ActionDefinition }) {
       onDragStart={handleDragStart}
       className="flex items-center gap-2 px-2 py-1.5 rounded-md cursor-grab hover:bg-gray-700 active:cursor-grabbing transition-colors group"
       title={action.description}
+      data-testid={`action-${action.id}`}
     >
       <Icon size={13} className={`${meta.color} flex-shrink-0`} />
       <span className="text-xs text-gray-300 truncate flex-1">{action.name}</span>

@@ -1,5 +1,6 @@
 import { registerAction } from '../registry';
 import type { ActionDefinition } from '../../types/actions';
+import type { LobsterStep } from '../../types/lobster';
 
 const writeFile: ActionDefinition = {
   id: 'write-file',
@@ -21,7 +22,7 @@ const writeFile: ActionDefinition = {
   ],
   defaults: { path: '', mode: 'overwrite' },
   compile: (config, ctx) => {
-    const step: any = {
+    const step: LobsterStep = {
       id: ctx.nodeId,
       command: `openclaw file write --path '${config.path}' --mode ${config.mode ?? 'overwrite'}`,
     };

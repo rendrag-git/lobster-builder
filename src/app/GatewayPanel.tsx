@@ -1,6 +1,8 @@
 import { useState } from 'react'
-import { X, RefreshCw, Wifi, WifiOff, Eye, EyeOff } from 'lucide-react'
+import { X, RefreshCw, Wifi, WifiOff, Eye, EyeOff, Trash2, CircleHelp } from 'lucide-react'
 import { useGatewayStore } from '../store/gateway-store'
+import type { SavedGateway } from '../store/gateway-store'
+import { Tooltip } from '../components/Tooltip'
 
 interface GatewayPanelProps {
   onClose: () => void
@@ -16,16 +18,45 @@ function formatRelativeTime(ts: number | null): string {
 }
 
 export function GatewayPanel({ onClose }: GatewayPanelProps) {
-  const { status, discovery, lastError, lastRefresh, connect, disconnect, refresh } =
+  const { status, discovery, lastError, lastRefresh, gateways, selectedGatewayId, config, connect, selectGateway, removeGateway, disconnect, refresh } =
     useGatewayStore()
 
-  const [url, setUrl] = useState('http://localhost:18789')
-  const [token, setToken] = useState('')
+  const initialGateway = gateways.find((gateway) => gateway.id === selectedGatewayId) ?? config ?? null
+  const [name, setName] = useState(initialGateway?.name ?? '')
+  const [url, setUrl] = useState(initialGateway?.url ?? '')
+  const [token, setToken] = useState(initialGateway?.token ?? '')
+  const [sourceGatewayId, setSourceGatewayId] = useState(initialGateway?.id ?? null)
   const [showToken, setShowToken] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
 
+  const sourceGateway = sourceGatewayId
+    ? gateways.find((gateway) => gateway.id === sourceGatewayId)
+    : null
+
   const handleConnect = () => {
-    connect({ url, token })
+    const nextName = name.trim()
+    const nextUrl = url.trim()
+    const nextToken = token.trim()
+    const shouldReuseGatewayId =
+      sourceGateway &&
+      sourceGateway.name === nextName &&
+      sourceGateway.url === nextUrl &&
+      sourceGateway.token === nextToken
+
+    connect({
+      ...(shouldReuseGatewayId ? { id: sourceGateway.id } : {}),
+      name: nextName,
+      url: nextUrl,
+      token: nextToken,
+    })
+  }
+
+  const loadGateway = (gateway: SavedGateway) => {
+    setName(gateway.name)
+    setUrl(gateway.url)
+    setToken(gateway.token)
+    setSourceGatewayId(gateway.id)
+    selectGateway(gateway.id)
   }
 
   const handleRefresh = async () => {
@@ -49,7 +80,7 @@ export function GatewayPanel({ onClose }: GatewayPanelProps) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" data-testid="gateway-panel">
       <div className="w-80 bg-gray-900 border border-gray-800 rounded-lg shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-gray-800">
@@ -60,6 +91,7 @@ export function GatewayPanel({ onClose }: GatewayPanelProps) {
           <button
             onClick={onClose}
             className="p-1 rounded hover:bg-gray-800 text-gray-500 hover:text-gray-300 transition-colors"
+            data-testid="gateway-close-btn"
           >
             <X size={14} />
           </button>
@@ -69,16 +101,34 @@ export function GatewayPanel({ onClose }: GatewayPanelProps) {
         <div className="px-4 py-3 space-y-3">
           {/* URL */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">
-              Gateway URL
-              <span className="text-gray-600 ml-1">(leave blank for dev proxy)</span>
+            <label className="block text-xs text-gray-400 mb-1">Gateway Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Home gateway"
+              className="w-full px-2 py-1.5 text-xs bg-gray-800 border border-gray-700 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500"
+              data-testid="gateway-name-input"
+            />
+          </div>
+
+          <div>
+            <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
+              <span>Gateway URL</span>
+              <Tooltip
+                side="bottom-left"
+                content="Leave this blank when Builder is served by the local dev server. The browser calls /tools/invoke on this origin and Vite proxies to the OpenClaw gateway. Only enter a full URL when that gateway allows browser CORS."
+              >
+                <CircleHelp size={12} className="text-gray-600" aria-hidden="true" />
+              </Tooltip>
             </label>
             <input
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="http://localhost:18789"
+              placeholder="Leave blank for local dev proxy"
               className="w-full px-2 py-1.5 text-xs bg-gray-800 border border-gray-700 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500"
+              data-testid="gateway-url-input"
             />
           </div>
 
@@ -92,6 +142,7 @@ export function GatewayPanel({ onClose }: GatewayPanelProps) {
                 onChange={(e) => setToken(e.target.value)}
                 placeholder="••••••••••••••••"
                 className="w-full px-2 py-1.5 pr-8 text-xs bg-gray-800 border border-gray-700 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500"
+                data-testid="gateway-token-input"
               />
               <button
                 type="button"
@@ -103,12 +154,44 @@ export function GatewayPanel({ onClose }: GatewayPanelProps) {
             </div>
           </div>
 
+          {gateways.length > 0 && (
+            <div className="pt-1 border-t border-gray-800 space-y-1">
+              <p className="text-gray-500 font-medium text-xs">Saved gateways</p>
+              <div className="max-h-24 overflow-y-auto space-y-1">
+                {gateways.map((gateway) => (
+                  <div key={gateway.id} className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => loadGateway(gateway)}
+                      className={`flex-1 min-w-0 text-left px-2 py-1 rounded text-xs transition-colors ${
+                        selectedGatewayId === gateway.id
+                          ? 'bg-blue-950/50 text-blue-200'
+                          : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'
+                      }`}
+                    >
+                      <span className="block truncate">{gateway.name}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeGateway(gateway.id)}
+                      title={`Remove ${gateway.name}`}
+                      className="p-1 rounded text-gray-600 hover:text-red-400 hover:bg-gray-800 transition-colors"
+                    >
+                      <Trash2 size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Buttons */}
           <div className="flex gap-2">
             <button
               onClick={handleConnect}
               disabled={status === 'connecting'}
               className="flex-1 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 disabled:opacity-50 disabled:cursor-not-allowed rounded text-white transition-colors"
+              data-testid="gateway-connect-btn"
             >
               {status === 'connecting' ? 'Connecting…' : 'Connect'}
             </button>

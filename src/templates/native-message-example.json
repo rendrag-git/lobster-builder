@@ -1,0 +1,63 @@
+{
+  "version": 1,
+  "meta": {
+    "name": "native-message-example",
+    "description": "Prepare a completion note, require approval, then send it through an OpenClaw channel"
+  },
+  "nodes": [
+    {
+      "id": "prepare-message",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 80 },
+      "data": {
+        "actionId": "run-shell-command",
+        "config": {
+          "command": "printf 'Lobster Builder native message example completed.'",
+          "cwd": ""
+        }
+      }
+    },
+    {
+      "id": "approve-message",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 250 },
+      "data": {
+        "actionId": "require-approval",
+        "config": {
+          "message": "Approve sending the completion message through the configured OpenClaw channel.",
+          "timeout": 24
+        }
+      }
+    },
+    {
+      "id": "send-message",
+      "type": "workflowNode",
+      "position": { "x": 250, "y": 420 },
+      "data": {
+        "actionId": "send-channel-message",
+        "config": {
+          "channel": "qa-channel",
+          "target": "channel:lobster-builder-proof",
+          "message": "Lobster Builder native message example completed.",
+          "useInputAsMessage": false
+        }
+      }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e-prepare-approve",
+      "source": "prepare-message",
+      "sourceHandle": "stdout",
+      "target": "approve-message",
+      "targetHandle": "input"
+    },
+    {
+      "id": "e-approve-send",
+      "source": "approve-message",
+      "sourceHandle": "approved",
+      "target": "send-message",
+      "targetHandle": "input"
+    }
+  ]
+}

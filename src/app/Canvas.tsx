@@ -51,7 +51,7 @@ export function Canvas() {
   }, [selectNode])
 
   return (
-    <div ref={containerRef} className="w-full h-full">
+    <div ref={containerRef} className="w-full h-full" data-testid="workflow-canvas">
       <ReactFlow
         nodes={nodes}
         edges={edges}

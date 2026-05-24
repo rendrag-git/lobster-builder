@@ -1,6 +1,6 @@
 import type { LobsterStep } from './lobster'
 
-export type ActionCategory = 'ai' | 'flow' | 'data' | 'io' | 'meta'
+export type ActionCategory = 'ai' | 'flow' | 'data' | 'io' | 'openclaw' | 'meta'
 
 export type PortKind = 'data' | 'trigger' | 'text' | 'any' | 'json'
 
@@ -34,8 +34,8 @@ export interface ConfigField {
   description?: string
   /** Whether this field is required */
   required?: boolean
-  /** When set, populates select options from live Gateway discovery data */
-  gatewaySource?: 'agents' | 'models' | 'channels' | 'skills' | 'tools'
+  /** When set, populates options from live Gateway discovery data */
+  gatewaySource?: 'agents' | 'models' | 'channels' | 'skills' | 'tools' | 'nodes'
 }
 
 export interface CompileContext {
@@ -58,6 +58,7 @@ export interface ActionDefinition {
   category: ActionCategory
   icon: string
   description: string
+  requiredTools?: string[]
   inputs: PortDefinition[]
   outputs: PortDefinition[]
   configFields: ConfigField[]

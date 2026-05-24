@@ -1,5 +1,6 @@
 import { registerAction } from '../registry';
 import type { ActionDefinition } from '../../types/actions';
+import type { LobsterStep } from '../../types/lobster';
 
 const sendNotification: ActionDefinition = {
   id: 'send-notification',
@@ -24,7 +25,7 @@ const sendNotification: ActionDefinition = {
   ],
   defaults: { channel: 'email', recipient: '', message: '' },
   compile: (config, ctx) => {
-    const step: any = {
+    const step: LobsterStep = {
       id: ctx.nodeId,
       command: `openclaw notify --channel ${config.channel ?? 'email'} --recipient '${config.recipient}' --message '${config.message}'`,
     };

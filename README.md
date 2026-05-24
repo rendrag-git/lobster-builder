@@ -1,111 +1,118 @@
 # Lobster Builder
 
-A standalone visual drag-and-drop workflow builder that outputs valid Lobster `.lobster` YAML files. Build workflows by connecting action nodes on a canvas, configure each step, and export production-ready Lobster YAML — all in the browser, no backend required.
+Lobster Builder is the visual editor for building and publishing OpenClaw-backed Lobster workflows.
 
-## Quick Start
+The normal way to use it is as an OpenClaw gateway plugin. The gateway serves the UI, the UI auto-connects back to that same gateway, and published workflows become reusable Lobster runs that agents can invoke with their existing OpenClaw permissions.
+
+## Use It In OpenClaw
+
+Build the plugin assets:
+
+```bash
+npm install
+npm run build
+```
+
+Load this repository as an OpenClaw plugin:
+
+```json
+{
+  "plugins": {
+    "enabled": true,
+    "allow": ["lobster-builder"],
+    "load": {
+      "paths": ["/path/to/lobster-builder"]
+    },
+    "entries": {
+      "lobster-builder": { "enabled": true }
+    }
+  }
+}
+```
+
+Restart the gateway, then open:
+
+```text
+/plugins/lobster-builder/
+```
+
+When hosted by the gateway, Builder injects a same-origin connection. You should not paste a gateway bearer token into the hosted plugin page. Browser write operations use OpenClaw browser/device auth through the gateway.
+
+## Build And Run A Workflow
+
+1. Open Builder from `/plugins/lobster-builder/`.
+2. Confirm the Gateway panel shows the hosted OpenClaw gateway as connected.
+3. Start from a blank canvas or the native message template.
+4. Drag blocks from the left sidebar onto the canvas.
+5. Connect output handles to input handles to pass data between blocks.
+6. Configure each block in the right panel.
+7. Watch the readiness panel for missing tools, missing effective agent permissions, or unavailable channel/node targets.
+8. Use Test Run to run the current canvas through the gateway.
+9. Use Publish to save a reusable workflow revision on the gateway.
+10. Agents can then run the published workflow through the `lobster` tool by `workflowId`.
+
+Published workflow refs can be reused from Run Sub-Workflow, chains, bundles, and cron-ready scheduled metadata.
+
+## Useful Blocks
+
+- Send Channel Message: sends a Discord, Slack, Telegram, or other OpenClaw channel message through the `message` tool.
+- OpenClaw Tool Call: calls another OpenClaw tool by name with JSON args.
+- LLM JSON Task: asks the `llm-task` tool for structured JSON output.
+- Run Agent: delegates work through `sessions_spawn`.
+- Node Action: invokes a connected node through `nodes`.
+- Run Sub-Workflow: runs a published workflow or file workflow from inside the current workflow.
+- Parallel Bundle: fans out to multiple published child workflows.
+- While Loop: emits Lobster flow rules for repeat-until behavior.
+
+## Permissions
+
+`lobster` is an orchestration permission. It does not grant every nested OpenClaw tool.
+
+Examples:
+
+- A workflow that sends a channel message needs `lobster` and `message`.
+- A workflow that runs an LLM JSON task needs `lobster` and `llm-task`.
+- A workflow that spawns another agent needs `lobster`, `sessions_spawn`, and whatever subagent policy OpenClaw requires.
+- A workflow that invokes a node needs `lobster`, `nodes`, and OpenClaw's node owner/admin policy.
+
+The invoking agent's effective tools decide what a published workflow can do. Giving an agent `lobster` alone lets it run Lobster workflows only until a nested step asks for a tool the agent does not have.
+
+## Troubleshooting
+
+- If the hosted plugin page is open, leave Gateway URL and token blank. The page uses same-origin gateway RPC.
+- If local dev shows `NetworkError when attempting to fetch resource`, the browser is probably blocked by CORS. Use the hosted plugin path or configure the gateway for browser access.
+- If readiness says a tool is missing, fix the invoking agent's OpenClaw tool policy. Browser auth is not the same as agent permission.
+- If a channel is missing, verify the channel is configured and enabled in the gateway.
+- If a node action is blocked, verify the node is connected and the invoking agent is allowed to use the node action.
+
+## Local Development
+
+Run the Vite app:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Open [http://localhost:5173](http://localhost:5173).
+Open:
 
-## How to Use
-
-1. **Choose a template** — pick a starter from the template picker (or blank canvas).
-2. **Drag actions** from the left sidebar onto the canvas.
-3. **Connect nodes** by dragging from an output port to an input port.
-4. **Configure each node** by clicking it — the right panel shows fields for that action.
-5. **Preview YAML** in the "YAML" tab of the right panel; it updates live.
-6. **Export** via the toolbar:
-   - **Export YAML** — downloads a `.lobster` file ready to run with `lobster run`.
-   - **Export Project** — downloads a `.lobster-builder.json` snapshot you can re-import later.
-7. **Import** — toolbar "Import" button accepts `.lobster`, `.yaml`, or `.lobster-builder.json`.
-
-## Action Catalog
-
-| Category | Actions |
-|----------|---------|
-| **AI** | Call Agent, Prompt LLM, Web Search, Web Fetch, Analyze Image |
-| **Flow** | Conditional Branch, Require Approval, Delay / Wait, Loop For Each, Error Handler |
-| **Data** | Set Variable, Filter Where, Transform Pick, Merge Join, JSON Renderer |
-| **I/O** | Run Shell Command, HTTP Request, Read File, Write File, Send Notification |
-| **Meta** | Run Sub-Workflow |
-
-## Architecture
-
-```
-src/
-├── actions/          # 20 action definitions (compile function per action)
-│   ├── ai/
-│   ├── flow/
-│   ├── data/
-│   ├── io/
-│   ├── meta/
-│   ├── registry.ts   # central action registry
-│   └── init.ts       # side-effect import to register all actions
-├── compiler/
-│   ├── compile.ts    # canvas graph → LobsterWorkflowFile (topological sort)
-│   ├── decompile.ts  # LobsterWorkflowFile → canvas graph (pattern matching)
-│   └── toYaml.ts     # LobsterWorkflowFile → YAML string
-├── store/
-│   └── workflow-store.ts  # Zustand store (nodes, edges, metadata, selection)
-├── lib/
-│   └── file-io.ts    # export/import helpers (YAML + builder-state JSON)
-├── types/
-│   ├── lobster.ts    # LobsterWorkflowFile, LobsterStep
-│   ├── actions.ts    # ActionDefinition, ConfigField, PortDefinition
-│   └── graph.ts      # WorkflowNode, WorkflowEdge, WorkflowMeta
-├── components/       # Reusable UI (ActionNode, ConfigField, etc.)
-├── app/              # Page-level components (Canvas, Sidebar, ConfigPanel, etc.)
-└── templates/        # Starter workflow JSON files
+```text
+http://localhost:5173
 ```
 
-**Data flow:**
+Local dev is useful for UI work. The plugin path is the product path for real gateway usage because it avoids CORS and uses gateway-local auth.
 
-```
-Sidebar drag → addNode() → Zustand store
-                                ↓
-                     ReactFlow canvas (nodes + edges)
-                                ↓
-                    compile() → LobsterWorkflowFile
-                                ↓
-                    workflowToYaml() → YAML string
-                                ↓
-                    download as .lobster
-```
+## Verification
 
-## Tech Stack
-
-- **React 18** + **TypeScript**
-- **React Flow** — canvas and edge routing
-- **Zustand** — global state
-- **Vite** — build tooling
-- **Tailwind CSS** + **shadcn/ui** — styling
-- **yaml** (npm) — YAML serialisation
-
-## Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start dev server |
-| `npm run build` | Production build → `dist/` |
-| `npm test` | Run Vitest unit + integration tests |
-| `npm run preview` | Preview production build locally |
-
-## Deployment
-
-The app is a pure static SPA. Deploy the `dist/` folder to any static host.
-
-**Cloudflare Pages:**
 ```bash
+npm test
+npm run lint
 npm run build
-npx wrangler pages deploy dist/ --project-name lobster-builder
+npm run test:e2e
+npm pack --dry-run
+git diff --check
 ```
 
-Or connect this repo to Cloudflare Pages for automatic deploys on push to `main`.
+## Public Data Boundary
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+Do not commit real gateway tokens, private keys, channel secrets, private customer data, Linear URLs, Codex environment URLs, or personal credentials. Tests use fixture values such as `test-token` and `team@example.com`.

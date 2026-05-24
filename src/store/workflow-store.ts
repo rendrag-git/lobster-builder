@@ -16,6 +16,7 @@ interface WorkflowState {
 
   // Node operations
   addNode: (actionId: string, position: { x: number; y: number }) => void
+  addConfiguredNode: (actionId: string, position: { x: number; y: number }, config: Record<string, unknown>) => void
   removeNode: (id: string) => void
   updateNodeConfig: (id: string, config: Record<string, unknown>) => void
 
@@ -63,6 +64,22 @@ export const useWorkflowStore = create<WorkflowState>((set) => ({
           data: {
             actionId,
             config: {},
+          },
+        },
+      ],
+    })),
+
+  addConfiguredNode: (actionId, position, config) =>
+    set((state) => ({
+      nodes: [
+        ...state.nodes,
+        {
+          id: nanoid(),
+          type: 'workflowNode',
+          position,
+          data: {
+            actionId,
+            config,
           },
         },
       ],

@@ -1,5 +1,6 @@
 import { registerAction } from '../registry';
 import type { ActionDefinition } from '../../types/actions';
+import type { LobsterStep } from '../../types/lobster';
 
 const httpRequest: ActionDefinition = {
   id: 'http-request',
@@ -28,7 +29,7 @@ const httpRequest: ActionDefinition = {
   ],
   defaults: { method: 'GET', url: '', headers: '{}' },
   compile: (config, ctx) => {
-    const step: any = {
+    const step: LobsterStep = {
       id: ctx.nodeId,
       command: `openclaw http --method ${config.method ?? 'GET'} --url '${config.url}' --headers '${config.headers ?? '{}'}'`,
     };

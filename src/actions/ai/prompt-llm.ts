@@ -1,5 +1,6 @@
 import { registerAction } from '../registry';
 import type { ActionDefinition } from '../../types/actions';
+import type { LobsterStep } from '../../types/lobster';
 
 const promptLlm: ActionDefinition = {
   id: 'prompt-llm',
@@ -23,7 +24,7 @@ const promptLlm: ActionDefinition = {
   ],
   defaults: { model: 'sonnet', prompt: '' },
   compile: (config, ctx) => {
-    const step: any = {
+    const step: LobsterStep = {
       id: ctx.nodeId,
       command: `openclaw llm --model ${config.model} --prompt '${config.prompt}'`,
     };

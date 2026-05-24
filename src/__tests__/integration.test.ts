@@ -5,10 +5,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { parse } from 'yaml';
 import { compile } from '../compiler/compile';
 import { compileToYaml } from '../compiler/toYaml';
 import { decompileWorkflow } from '../compiler/decompile';
 import { exportWorkflow, exportBuilderState, parseImport } from '../lib/file-io';
+import nativeMessageExample from '../templates/native-message-example.json';
 import '../actions/init';
 import type { WorkflowNode, WorkflowEdge, WorkflowMeta } from '../types/graph';
 
@@ -156,6 +158,260 @@ describe('builder-state JSON export/import', () => {
     const json = exportBuilderState([], [], meta);
     const parsed = JSON.parse(json);
     expect(parsed.version).toBe(1);
+  });
+
+  it('preserves gateway, schedule, and bundle metadata', () => {
+    const richMeta: WorkflowMeta = {
+      name: 'assigned-flow',
+      gateway: { id: 'home', name: 'Home gateway' },
+      schedule: { cron: '0 8 * * *', timezone: 'America/New_York', enabled: true },
+      bundle: {
+        id: 'morning',
+        name: 'Morning bundle',
+        mode: 'chain',
+        reusable: true,
+        workflowRefs: ['triage.lobster', 'notify.lobster'],
+      },
+    };
+
+    const yaml = exportWorkflow([node('step1', 'run-shell-command', { command: 'echo ok' })], [], richMeta);
+    expect(yaml).toContain('openclaw:');
+    expect(yaml).toContain('id: home');
+    expect(yaml).toContain('cron: 0 8 * * *');
+    expect(yaml).toContain('triage.lobster');
+
+    const importedYaml = parseImport(yaml, 'assigned-flow.lobster');
+    expect(importedYaml.meta.gateway).toEqual(richMeta.gateway);
+    expect(importedYaml.meta.schedule).toEqual(richMeta.schedule);
+    expect(importedYaml.meta.bundle).toEqual(richMeta.bundle);
+
+    const json = exportBuilderState([], [], richMeta);
+    const importedJson = parseImport(json, 'assigned-flow.lobster-builder.json');
+    expect(importedJson.meta).toEqual(richMeta);
+  });
+
+  it('preserves OpenClaw native action intent through YAML import', () => {
+    const nodes = [
+      node('notify', 'send-channel-message', {
+        channel: 'discord',
+        target: 'ops',
+        message: 'Workflow finished',
+      }),
+    ];
+
+    const yaml = exportWorkflow(nodes, [], meta);
+    expect(yaml).toContain('openclaw_action:');
+    expect(yaml).toContain('tool: message');
+    expect(yaml).toContain('openclaw.invoke');
+
+    const imported = parseImport(yaml, 'native-message.lobster');
+    expect(imported.nodes).toHaveLength(1);
+    expect(imported.nodes[0].data.actionId).toBe('send-channel-message');
+    expect(imported.nodes[0].data.config).toEqual({
+      channel: 'discord',
+      target: 'ops',
+      message: 'Workflow finished',
+      useInputAsMessage: false,
+    });
+  });
+
+  it('loads the native message example and exports credential-free message workflow YAML', () => {
+    const template = nativeMessageExample as {
+      nodes: WorkflowNode[];
+      edges: WorkflowEdge[];
+      meta: WorkflowMeta;
+    };
+    const loaded = parseImport(JSON.stringify(template), 'native-message-example.lobster-builder.json');
+    expect(loaded.nodes).toHaveLength(3);
+    expect(loaded.edges).toHaveLength(2);
+
+    const workflow = compile(loaded.nodes, loaded.edges, loaded.meta);
+    expect(workflow.steps.map((step) => step.id)).toEqual([
+      'prepare-message',
+      'approve-message',
+      'send-message',
+    ]);
+
+    const sendStep = workflow.steps.find((step) => step.id === 'send-message');
+    expect(sendStep).toMatchObject({
+      openclaw_action: {
+        tool: 'message',
+        action: 'send',
+        args: {
+          provider: 'qa-channel',
+          to: 'channel:lobster-builder-proof',
+          message: 'Lobster Builder native message example completed.',
+        },
+        requiredTools: ['lobster', 'message'],
+      },
+    });
+
+    const yaml = exportWorkflow(loaded.nodes, loaded.edges, loaded.meta);
+    expect(yaml).not.toMatch(/authorization|bearer|token|secret/i);
+    const parsed = parse(yaml) as Record<string, unknown>;
+    expect(parsed).toMatchObject({
+      name: 'native-message-example',
+      steps: [
+        { id: 'prepare-message' },
+        { id: 'approve-message' },
+        {
+          id: 'send-message',
+          openclaw_action: {
+            tool: 'message',
+            action: 'send',
+            requiredTools: ['lobster', 'message'],
+          },
+        },
+      ],
+    });
+
+    const imported = parseImport(yaml, 'native-message-example.lobster');
+    expect(imported.nodes.some((node) => node.data.actionId === 'send-channel-message')).toBe(true);
+  });
+
+  it('preserves LLM JSON Task intent through YAML import', () => {
+    const nodes = [
+      node('classify', 'llm-json-task', {
+        prompt: 'Return intent.',
+        inputJson: '{"subject":"Hello"}',
+        schemaJson: '{"type":"object","required":["intent"]}',
+        provider: 'mock-openai',
+        model: 'gpt-5.5',
+        thinking: 'off',
+        authProfileId: 'main',
+        temperature: 0,
+        maxTokens: 200,
+        timeoutMs: 30000,
+      }),
+    ];
+
+    const yaml = exportWorkflow(nodes, [], meta);
+    expect(yaml).toContain('tool: llm-task');
+    expect(yaml).toContain('action: json');
+
+    const imported = parseImport(yaml, 'native-llm-json-task.lobster');
+    expect(imported.nodes).toHaveLength(1);
+    expect(imported.nodes[0].data.actionId).toBe('llm-json-task');
+    expect(imported.nodes[0].data.config).toEqual({
+      prompt: 'Return intent.',
+      inputJson: '{\n  "subject": "Hello"\n}',
+      useInputAsInput: false,
+      schemaJson: '{\n  "type": "object",\n  "required": [\n    "intent"\n  ]\n}',
+      provider: 'mock-openai',
+      model: 'gpt-5.5',
+      thinking: 'off',
+      authProfileId: 'main',
+      temperature: 0,
+      maxTokens: 200,
+      timeoutMs: 30000,
+    });
+  });
+
+  it('preserves LLM JSON Task input wiring through YAML import', () => {
+    const nodes = [
+      node('collect', 'run-shell-command', { command: 'printf "{}"' }),
+      node('classify', 'llm-json-task', {
+        prompt: 'Summarize input.',
+        useInputAsInput: true,
+      }),
+    ];
+
+    const imported = parseImport(
+      exportWorkflow(nodes, [edge('collect', 'classify')], meta),
+      'native-llm-json-task-wired.lobster',
+    );
+    expect(imported.edges).toHaveLength(1);
+    expect(imported.edges[0]).toMatchObject({ source: 'collect', target: 'classify' });
+    expect(imported.nodes[1].data.actionId).toBe('llm-json-task');
+    expect(imported.nodes[1].data.config).toMatchObject({
+      prompt: 'Summarize input.',
+      useInputAsInput: true,
+    });
+  });
+
+  it('preserves Run Agent and Node Action intent through YAML import', () => {
+    const nodes = [
+      node('delegate', 'run-agent', {
+        agentId: 'researcher',
+        task: 'Investigate the customer record.',
+        runtime: 'subagent',
+        mode: 'run',
+      }),
+      node('node-status', 'node-action', {
+        node: 'macbook',
+        command: 'device.status',
+        paramsJson: '{"includeBattery":true}',
+        timeoutMs: 5000,
+      }),
+    ];
+
+    const yaml = exportWorkflow(nodes, [edge('delegate', 'node-status')], meta);
+    expect(yaml).toContain('tool: sessions_spawn');
+    expect(yaml).toContain('tool: nodes');
+
+    const imported = parseImport(yaml, 'native-run-agent-node.lobster');
+    expect(imported.nodes).toHaveLength(2);
+    expect(imported.nodes[0].data.actionId).toBe('run-agent');
+    expect(imported.nodes[1].data.actionId).toBe('node-action');
+    expect(imported.nodes[0].data.config).toMatchObject({
+      agentId: 'researcher',
+      task: 'Investigate the customer record.',
+      runtime: 'subagent',
+      mode: 'run',
+    });
+    expect(imported.nodes[1].data.config).toMatchObject({
+      node: 'macbook',
+      command: 'device.status',
+      paramsJson: '{\n  "includeBattery": true\n}',
+      timeoutMs: 5000,
+    });
+  });
+
+  it('preserves Run Agent input wiring through YAML import', () => {
+    const nodes = [
+      node('collect', 'set-variable', { name: 'customer', value: '{"id":"c_123"}' }),
+      node('delegate', 'run-agent', {
+        agentId: 'researcher',
+        task: 'Use the incoming customer context.',
+        taskName: 'research_customer',
+        label: 'Research customer',
+        runtime: 'subagent',
+        mode: 'run',
+        model: 'mock-openai/gpt-5.5',
+        thinking: 'medium',
+        cwd: '/workspace',
+        runTimeoutSeconds: 45,
+        cleanup: 'delete',
+        sandbox: 'require',
+        context: 'isolated',
+        lightContext: true,
+      }),
+    ];
+
+    const yaml = exportWorkflow(nodes, [edge('collect', 'delegate')], meta);
+    expect(yaml).toContain('tool: sessions_spawn');
+    expect(yaml).toContain('stdin: $collect.stdout');
+
+    const imported = parseImport(yaml, 'native-run-agent-wired.lobster');
+    expect(imported.edges).toHaveLength(1);
+    expect(imported.edges[0]).toMatchObject({ source: 'collect', target: 'delegate' });
+    expect(imported.nodes[1].data.actionId).toBe('run-agent');
+    expect(imported.nodes[1].data.config).toMatchObject({
+      agentId: 'researcher',
+      task: 'Use the incoming customer context.',
+      taskName: 'research_customer',
+      label: 'Research customer',
+      runtime: 'subagent',
+      mode: 'run',
+      model: 'mock-openai/gpt-5.5',
+      thinking: 'medium',
+      cwd: '/workspace',
+      runTimeoutSeconds: 45,
+      cleanup: 'delete',
+      sandbox: 'require',
+      context: 'isolated',
+      lightContext: true,
+    });
   });
 });
 

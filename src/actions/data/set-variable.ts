@@ -1,5 +1,6 @@
 import { registerAction } from '../registry';
 import type { ActionDefinition } from '../../types/actions';
+import type { LobsterStep } from '../../types/lobster';
 
 const setVariable: ActionDefinition = {
   id: 'set-variable',
@@ -15,7 +16,7 @@ const setVariable: ActionDefinition = {
   ],
   defaults: { name: '', value: '' },
   compile: (config, ctx) => {
-    const step: any = {
+    const step: LobsterStep = {
       id: ctx.nodeId,
       command: `openclaw data set --name '${config.name}' --value '${config.value}'`,
     };

@@ -60,6 +60,28 @@ describe('compile()', () => {
     expect(dst.stdin).toBe('$src.stdout');
   });
 
+  it('compiles OpenClaw native actions as Lobster pipeline steps with structured metadata', () => {
+    const nodes = [
+      makeNode('notify', 'send-channel-message', {
+        channel: 'discord',
+        target: 'ops',
+        message: 'done',
+      }),
+    ];
+
+    const result = compile(nodes, [], meta);
+    expect(result.steps[0]).toMatchObject({
+      id: 'notify',
+      pipeline: expect.stringContaining('openclaw.invoke'),
+      openclaw_action: {
+        tool: 'message',
+        action: 'send',
+        args: { provider: 'discord', to: 'ops', message: 'done' },
+      },
+    });
+    expect(result.steps[0].command).toBeUndefined();
+  });
+
   it('handles two sources merging into one target', () => {
     const nodes = [
       makeNode('A', 'run-shell-command', { command: 'left' }),
@@ -71,6 +93,41 @@ describe('compile()', () => {
     const ids = result.steps.map((s) => s.id);
     expect(ids.indexOf('A')).toBeLessThan(ids.indexOf('C'));
     expect(ids.indexOf('B')).toBeLessThan(ids.indexOf('C'));
+  });
+
+  it('compiles parallel bundle refs into an executable fan-out step', () => {
+    const result = compile([], [], {
+      name: 'parallel-parent',
+      bundle: {
+        mode: 'parallel',
+        workflowRefs: ['child-a@2', 'child-b'],
+      },
+    });
+
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0]).toMatchObject({
+      id: 'openclaw_parallel_bundle',
+      openclaw_parallel_bundle: {
+        wait: 'all',
+        branches: [
+          {
+            id: 'child-a',
+            ref: 'child-a@2',
+            workflowId: 'child-a',
+            workflowRevision: 2,
+            pipeline: "lobster.workflow --workflow-id 'child-a' --workflow-revision '2'",
+          },
+          {
+            id: 'child-b',
+            ref: 'child-b',
+            workflowId: 'child-b',
+            pipeline: "lobster.workflow --workflow-id 'child-b'",
+          },
+        ],
+      },
+    });
+    expect(result.steps[0].pipeline).toContain('lobster.parallel --branches-json');
+    expect(result.steps[0].pipeline).toContain('child-a');
   });
 
   it('skips unknown action ids gracefully', () => {
@@ -163,29 +220,42 @@ describe('loop-for-each', () => {
 });
 
 describe('run-sub-workflow', () => {
-  it('generates lobster.run --file command', () => {
-    const nodes = [makeNode('sub1', 'run-sub-workflow', { file: 'workflows/child.lobster' })];
+  it('generates lobster.workflow --file pipeline', () => {
+    const nodes = [makeNode('sub1', 'run-sub-workflow', { target: 'file', file: 'workflows/child.lobster' })];
     const result = compile(nodes, [], { name: 'test' });
-    expect(result.steps[0].command).toBe("lobster.run --file 'workflows/child.lobster'");
+    expect(result.steps[0].pipeline).toBe("lobster.workflow --file 'workflows/child.lobster'");
+    expect(result.steps[0].openclaw_workflow_ref).toEqual({
+      target: 'file',
+      file: 'workflows/child.lobster',
+    });
   });
 
-  it('generates lobster.run --name command', () => {
-    const nodes = [makeNode('sub1', 'run-sub-workflow', { name: 'analyze' })];
+  it('generates lobster.workflow --workflow-id pipeline', () => {
+    const nodes = [makeNode('sub1', 'run-sub-workflow', { target: 'published', workflowId: 'analyze' })];
     const result = compile(nodes, [], { name: 'test' });
-    expect(result.steps[0].command).toBe("lobster.run --name 'analyze'");
+    expect(result.steps[0].pipeline).toBe("lobster.workflow --workflow-id 'analyze'");
+    expect(result.steps[0].openclaw_workflow_ref).toEqual({
+      target: 'published',
+      workflowId: 'analyze',
+    });
   });
 
   it('includes --args-json flag when argsJson provided', () => {
-    const nodes = [makeNode('sub1', 'run-sub-workflow', { name: 'analyze', argsJson: '{"x":1}' })];
+    const nodes = [makeNode('sub1', 'run-sub-workflow', { target: 'published', workflowId: 'analyze', argsJson: '{"x":1}' })];
     const result = compile(nodes, [], { name: 'test' });
-    expect(result.steps[0].command).toBe(`lobster.run --name 'analyze' --args-json '{"x":1}'`);
+    expect(result.steps[0].pipeline).toBe(`lobster.workflow --workflow-id 'analyze' --args-json '{"x":1}'`);
+    expect(result.steps[0].openclaw_workflow_ref).toEqual({
+      target: 'published',
+      workflowId: 'analyze',
+      args: { x: 1 },
+    });
   });
 
-  it('file takes precedence over name when both provided', () => {
-    const nodes = [makeNode('sub1', 'run-sub-workflow', { file: 'w/a.lobster', name: 'ignored' })];
+  it('file target ignores published workflow id', () => {
+    const nodes = [makeNode('sub1', 'run-sub-workflow', { target: 'file', file: 'w/a.lobster', workflowId: 'ignored' })];
     const result = compile(nodes, [], { name: 'test' });
-    expect(result.steps[0].command).toContain("--file 'w/a.lobster'");
-    expect(result.steps[0].command).not.toContain('--name');
+    expect(result.steps[0].pipeline).toContain("--file 'w/a.lobster'");
+    expect(result.steps[0].pipeline).not.toContain('--workflow-id');
   });
 });
 

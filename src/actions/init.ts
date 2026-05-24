@@ -26,4 +26,10 @@ import './io/read-file';
 import './io/write-file';
 import './io/send-notification';
 
+import './openclaw/send-channel-message';
+import './openclaw/tool-call';
+import './openclaw/llm-json-task';
+import './openclaw/run-agent';
+import './openclaw/node-action';
+
 import './meta/run-sub-workflow';

@@ -71,6 +71,7 @@ function Toolbar({ onShowTemplates, onShowGateway, isDark, onToggleDark, sidebar
         onClick={onShowGateway}
         className="flex items-center gap-1.5 px-1.5 py-0.5 rounded hover:bg-gray-800 transition-colors"
         title={`Gateway: ${gatewayStatus}`}
+        data-testid="open-gateway-panel"
       >
         <span className={`w-2 h-2 rounded-full ${statusDotColor[gatewayStatus]}`} />
         <span className="text-xs text-gray-500">Gateway</span>
@@ -80,6 +81,7 @@ function Toolbar({ onShowTemplates, onShowGateway, isDark, onToggleDark, sidebar
           onClick={onShowTemplates}
           title="Browse templates"
           className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-400 hover:text-gray-100 hover:bg-gray-800 rounded transition-colors"
+          data-testid="open-templates"
         >
           <LayoutTemplate size={12} />
           Templates
@@ -148,6 +150,7 @@ function RightPanel() {
       <div className="flex border-b border-gray-800 flex-shrink-0">
         <button
           onClick={() => setActiveTab('config')}
+          data-testid="config-workflow-tab"
           className={`flex-1 py-2 text-xs font-medium transition-colors ${
             activeTab === 'config'
               ? 'text-white border-b-2 border-blue-500 bg-gray-800/40'
@@ -158,6 +161,7 @@ function RightPanel() {
         </button>
         <button
           onClick={() => setActiveTab('yaml')}
+          data-testid="yaml-preview-tab"
           className={`flex-1 py-2 text-xs font-medium transition-colors ${
             activeTab === 'yaml'
               ? 'text-white border-b-2 border-blue-500 bg-gray-800/40'
@@ -178,18 +182,11 @@ function RightPanel() {
 
 export default function App() {
   const nodeCount = useWorkflowStore((s) => s.nodes.length)
-  const [showTemplates, setShowTemplates] = useState(false)
+  const [showTemplates, setShowTemplates] = useState(() => nodeCount === 0)
   const [showGateway, setShowGateway] = useState(false)
   const [isDark, setIsDark] = useState(true)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
-
-  // Auto-show template picker on first load when canvas is empty
-  useEffect(() => {
-    if (nodeCount === 0) {
-      setShowTemplates(true)
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize gateway connection from saved config
   useEffect(() => {

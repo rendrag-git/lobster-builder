@@ -1,6 +1,12 @@
-import { X, Workflow, Search, GitBranch, CheckSquare, Plus } from 'lucide-react'
+import { X, Workflow, Search, GitBranch, CheckSquare, MessageSquare, Plus } from 'lucide-react'
 import { useWorkflowStore } from '../store/workflow-store'
 import type { WorkflowNode, WorkflowEdge, WorkflowMeta } from '../types/graph'
+
+interface TemplateData {
+  nodes: WorkflowNode[]
+  edges: WorkflowEdge[]
+  meta: WorkflowMeta
+}
 
 interface TemplateCard {
   id: string
@@ -9,7 +15,11 @@ interface TemplateCard {
   icon: React.ReactNode
   nodeCount: number
   tags: string[]
-  load: () => Promise<{ nodes: WorkflowNode[]; edges: WorkflowEdge[]; meta: WorkflowMeta }>
+  load: () => Promise<TemplateData>
+}
+
+function loadTemplate(importer: () => Promise<{ default: TemplateData }>): Promise<TemplateData> {
+  return importer().then((m) => m.default)
 }
 
 const TEMPLATES: TemplateCard[] = [
@@ -20,7 +30,7 @@ const TEMPLATES: TemplateCard[] = [
     icon: <Workflow size={20} />,
     nodeCount: 2,
     tags: ['starter', 'shell'],
-    load: () => import('../templates/hello-world.json').then((m) => m.default as any),
+    load: () => loadTemplate(() => import('../templates/hello-world.json')),
   },
   {
     id: 'pr-monitor',
@@ -29,7 +39,7 @@ const TEMPLATES: TemplateCard[] = [
     icon: <GitBranch size={20} />,
     nodeCount: 3,
     tags: ['github', 'notification'],
-    load: () => import('../templates/pr-monitor.json').then((m) => m.default as any),
+    load: () => loadTemplate(() => import('../templates/pr-monitor.json')),
   },
   {
     id: 'ai-research',
@@ -38,7 +48,7 @@ const TEMPLATES: TemplateCard[] = [
     icon: <Search size={20} />,
     nodeCount: 3,
     tags: ['ai', 'llm', 'research'],
-    load: () => import('../templates/ai-research.json').then((m) => m.default as any),
+    load: () => loadTemplate(() => import('../templates/ai-research.json')),
   },
   {
     id: 'approval-pipeline',
@@ -47,7 +57,16 @@ const TEMPLATES: TemplateCard[] = [
     icon: <CheckSquare size={20} />,
     nodeCount: 4,
     tags: ['approval', 'agent', 'review'],
-    load: () => import('../templates/approval-pipeline.json').then((m) => m.default as any),
+    load: () => loadTemplate(() => import('../templates/approval-pipeline.json')),
+  },
+  {
+    id: 'native-message-example',
+    name: 'OpenClaw Message',
+    description: 'Prepare a result, require approval, then send a native OpenClaw channel message.',
+    icon: <MessageSquare size={20} />,
+    nodeCount: 3,
+    tags: ['openclaw', 'message', 'approval'],
+    load: () => loadTemplate(() => import('../templates/native-message-example.json')),
   },
 ]
 
@@ -81,6 +100,7 @@ export function TemplatePickerModal({ onClose }: TemplatePickerModalProps) {
       className="fixed inset-0 z-50 flex items-center justify-center"
       style={{ background: 'rgba(0,0,0,0.7)' }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      data-testid="template-picker"
     >
       <div
         className="w-full max-w-2xl mx-4 rounded-xl border border-gray-700 shadow-2xl"
@@ -106,6 +126,7 @@ export function TemplatePickerModal({ onClose }: TemplatePickerModalProps) {
           <button
             onClick={handleBlankCanvas}
             className="flex flex-col items-center justify-center gap-2 p-6 rounded-lg border-2 border-dashed border-gray-700 hover:border-gray-500 hover:bg-gray-800/40 transition-all text-gray-500 hover:text-gray-300 group"
+            data-testid="template-blank-canvas"
           >
             <Plus size={24} className="group-hover:scale-110 transition-transform" />
             <span className="text-sm font-medium">Blank Canvas</span>
@@ -118,6 +139,7 @@ export function TemplatePickerModal({ onClose }: TemplatePickerModalProps) {
               key={template.id}
               onClick={() => handleSelectTemplate(template)}
               className="flex flex-col gap-3 p-4 rounded-lg border border-gray-700 hover:border-gray-500 hover:bg-gray-800/40 transition-all text-left group"
+              data-testid={`template-card-${template.id}`}
             >
               <div className="flex items-start justify-between">
                 <div className="p-2 rounded-md bg-gray-800 text-blue-400 group-hover:bg-blue-900/30 group-hover:text-blue-300 transition-colors">

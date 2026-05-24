@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { discover, testConnection, loadConfig, saveConfig, clearConfig } from '../lib/gateway-client'
+import { discover, testConnection, loadConfig, loadHostedGatewayConfig, saveConfig, clearConfig, loadGateways, saveGateway, deleteGateway } from '../lib/gateway-client'
 import type { GatewayConfig } from '../lib/gateway-client'
 
 const mockConfig: GatewayConfig = { url: 'http://localhost:18789', token: 'test-token' }
@@ -13,12 +13,153 @@ function mockFetchHttpError(status: number, statusText: string) {
   })
 }
 
+function mockGatewayRpc(effectiveResult: unknown) {
+  const sentFrames: Array<Record<string, unknown>> = []
+
+  class MockWebSocket {
+    static CONNECTING = 0
+    static OPEN = 1
+    static CLOSED = 3
+
+    readyState = MockWebSocket.OPEN
+    onmessage: ((event: { data: string }) => void) | null = null
+    onerror: (() => void) | null = null
+    url: string
+
+    constructor(url: string) {
+      this.url = url
+      setTimeout(() => {
+        this.emit({ type: 'event', event: 'connect.challenge', payload: { nonce: 'nonce-1' } })
+      }, 0)
+    }
+
+    send(raw: string) {
+      const frame = JSON.parse(raw) as Record<string, unknown>
+      sentFrames.push(frame)
+      if (frame.method === 'connect') {
+        setTimeout(() => {
+          this.emit({
+            type: 'res',
+            id: frame.id,
+            ok: true,
+            payload: {
+              type: 'hello-ok',
+              protocol: 4,
+              server: { version: 'test', connId: 'conn-1' },
+              features: { methods: ['tools.effective'], events: [] },
+              snapshot: {},
+              auth: { role: 'operator', scopes: ['operator.read'] },
+              policy: { maxPayload: 1, maxBufferedBytes: 1, tickIntervalMs: 1000 },
+            },
+          })
+        }, 0)
+        return
+      }
+      if (frame.method === 'tools.effective') {
+        setTimeout(() => {
+          this.emit({ type: 'res', id: frame.id, ok: true, payload: effectiveResult })
+        }, 0)
+      }
+    }
+
+    close() {
+      this.readyState = MockWebSocket.CLOSED
+    }
+
+    private emit(frame: Record<string, unknown>) {
+      this.onmessage?.({ data: JSON.stringify(frame) })
+    }
+  }
+
+  vi.stubGlobal('WebSocket', MockWebSocket)
+  return sentFrames
+}
+
+function mockHostedGatewayRpc(results: {
+  agents?: unknown
+  sessionStatus?: unknown
+  tools?: unknown
+  channels?: unknown
+  nodes?: unknown
+  effective?: unknown
+}) {
+  const sentFrames: Array<Record<string, unknown>> = []
+
+  class MockWebSocket {
+    static CONNECTING = 0
+    static OPEN = 1
+    static CLOSED = 3
+
+    readyState = MockWebSocket.OPEN
+    onmessage: ((event: { data: string }) => void) | null = null
+    onerror: (() => void) | null = null
+
+    constructor() {
+      setTimeout(() => {
+        this.emit({ type: 'event', event: 'connect.challenge', payload: { nonce: 'nonce-1' } })
+      }, 0)
+    }
+
+    send(raw: string) {
+      const frame = JSON.parse(raw) as Record<string, unknown>
+      sentFrames.push(frame)
+      if (frame.method === 'connect') {
+        setTimeout(() => {
+          this.emit({
+            type: 'res',
+            id: frame.id,
+            ok: true,
+            payload: {
+              type: 'hello-ok',
+              protocol: 4,
+              server: { version: 'test', connId: 'conn-1' },
+              features: { methods: [], events: [] },
+              snapshot: {},
+              auth: { role: 'operator', scopes: ['operator.read'] },
+              policy: { maxPayload: 1, maxBufferedBytes: 1, tickIntervalMs: 1000 },
+            },
+          })
+        }, 0)
+        return
+      }
+
+      const payload = frame.method === 'agents.list'
+        ? results.agents
+        : frame.method === 'tools.invoke'
+          ? { ok: true, output: results.sessionStatus ?? {} }
+          : frame.method === 'tools.catalog'
+            ? results.tools
+            : frame.method === 'channels.status'
+              ? results.channels
+              : frame.method === 'node.list'
+                ? results.nodes
+                : results.effective
+      setTimeout(() => {
+        this.emit({ type: 'res', id: frame.id, ok: true, payload })
+      }, 0)
+    }
+
+    close() {
+      this.readyState = MockWebSocket.CLOSED
+    }
+
+    private emit(frame: Record<string, unknown>) {
+      this.onmessage?.({ data: JSON.stringify(frame) })
+    }
+  }
+
+  vi.stubGlobal('WebSocket', MockWebSocket)
+  return sentFrames
+}
+
 beforeEach(() => {
   vi.stubGlobal('fetch', undefined)
   localStorage.clear()
+  delete window.__LOBSTER_BUILDER_GATEWAY__
 })
 
 afterEach(() => {
+  delete window.__LOBSTER_BUILDER_GATEWAY__
   vi.unstubAllGlobals()
 })
 
@@ -34,6 +175,26 @@ describe('discover()', () => {
       model: 'claude-sonnet-4-5',
       model_alias: 'sonnet',
     }
+    const toolsResult = {
+      groups: [
+        {
+          id: 'messaging',
+          tools: [{ id: 'message' }, { id: 'lobster' }],
+        },
+      ],
+    }
+    const channelsResult = {
+      channelOrder: ['discord', 'telegram'],
+      channels: {
+        discord: { configured: true, enabled: true, type: 'discord' },
+        telegram: { configured: true, enabled: false, type: 'telegram' },
+      },
+    }
+    const nodesResult = {
+      nodes: [
+        { nodeId: 'oc-node-1', displayName: 'MacBook', connected: true, commands: ['device.status'] },
+      ],
+    }
 
     let toolCallCount = 0
     vi.stubGlobal(
@@ -46,7 +207,15 @@ describe('discover()', () => {
         // Phase 1 tool invocations
         toolCallCount++
         const body = JSON.parse(opts?.body ?? '{}')
-        const result = body.tool === 'agents_list' ? agentsResult : statusResult
+        const result = body.tool === 'agents_list'
+          ? agentsResult
+          : body.tool === 'session_status'
+            ? statusResult
+            : body.tool === 'tools.catalog'
+            ? toolsResult
+            : body.tool === 'channels.status'
+              ? channelsResult
+              : nodesResult
         return Promise.resolve({
           ok: true,
           json: () => Promise.resolve({ ok: true, result }),
@@ -56,16 +225,142 @@ describe('discover()', () => {
 
     const data = await discover(mockConfig)
 
-    expect(toolCallCount).toBe(2)
+    expect(toolCallCount).toBe(5)
     expect(data.agents).toHaveLength(2)
     expect(data.agents[0]).toEqual({ id: 'soren', name: 'Soren', default: undefined })
     expect(data.agents[1]).toEqual({ id: 'atlas', name: 'Atlas', default: true })
     expect(data.models).toHaveLength(1)
     expect(data.models[0].id).toBe('claude-sonnet-4-5')
     expect(data.models[0].alias).toBe('sonnet')
-    expect(data.channels).toEqual([])
+    expect(data.channels).toEqual([
+      { id: 'discord', enabled: true, type: 'discord' },
+      { id: 'telegram', enabled: false, type: 'telegram' },
+    ])
     expect(data.skills).toEqual([])
-    expect(data.tools).toEqual([])
+    expect(data.tools).toEqual(['lobster', 'message'])
+    expect(data.nodes).toEqual([
+      { id: 'oc-node-1', name: 'MacBook', connected: true, commands: ['device.status'] },
+    ])
+    expect(data.effectiveTools).toBeNull()
+  })
+
+  it('maps tools.effective into effective tool discovery when session_status exposes a session key', async () => {
+    const effectiveFrames = mockGatewayRpc({
+      agentId: 'main',
+      profile: 'messaging',
+      groups: [
+        {
+          id: 'core',
+          label: 'Built-in tools',
+          source: 'core',
+          tools: [{ id: 'lobster' }, { id: 'message' }],
+        },
+      ],
+    })
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation((url: string, opts?: { body?: string }) => {
+        if (url.includes('/api/discover')) {
+          return Promise.resolve({ ok: false, status: 404, statusText: 'Not Found', json: () => Promise.resolve({}) })
+        }
+        const body = JSON.parse(opts?.body ?? '{}')
+        const result = body.tool === 'agents_list'
+          ? { agents: [{ id: 'main', name: 'Main' }] }
+          : body.tool === 'session_status'
+            ? { details: { sessionKey: 'agent:main:main', model: 'gpt-5', modelProvider: 'openai' } }
+            : body.tool === 'tools.catalog'
+              ? { groups: [{ id: 'messaging', tools: [{ id: 'message' }, { id: 'lobster' }] }] }
+              : body.tool === 'channels.status'
+                ? { channelOrder: [], channels: {} }
+                : { nodes: [] }
+        return Promise.resolve({
+          ok: true,
+          json: () => Promise.resolve({ ok: true, result }),
+        })
+      }),
+    )
+
+    const data = await discover(mockConfig)
+
+    expect(data.models).toEqual([{ id: 'gpt-5', alias: undefined, provider: 'openai' }])
+    expect(data.effectiveTools).toEqual({
+      agentId: 'main',
+      sessionKey: 'agent:main:main',
+      profile: 'messaging',
+      tools: ['lobster', 'message'],
+    })
+    expect(effectiveFrames.map((frame) => frame.method)).toEqual(['connect', 'tools.effective'])
+    expect((effectiveFrames[0].params as { auth?: { token?: string }; scopes?: string[] }).auth?.token).toBe('test-token')
+    expect((effectiveFrames[0].params as { auth?: { token?: string }; scopes?: string[] }).scopes).toEqual(['operator.read'])
+    expect(effectiveFrames[1].params).toEqual({ sessionKey: 'agent:main:main', agentId: 'main' })
+  })
+
+  it('uses read-scope Gateway RPC discovery for hosted tokenless configs', async () => {
+    const frames = mockHostedGatewayRpc({
+      agents: {
+        defaultId: 'main',
+        mainKey: 'main',
+        scope: 'per-sender',
+        agents: [{ id: 'main', name: 'Main' }],
+      },
+      sessionStatus: {
+        sessionKey: 'main',
+        details: { model: 'gpt-5', modelProvider: 'openai' },
+      },
+      tools: { groups: [{ id: 'core', tools: [{ id: 'lobster' }, { id: 'message' }] }] },
+      channels: {
+        channelOrder: ['discord'],
+        channels: { discord: { enabled: true, type: 'discord' } },
+      },
+      nodes: {
+        nodes: [{ nodeId: 'oc-node-1', displayName: 'MacBook', connected: true }],
+      },
+      effective: {
+        agentId: 'main',
+        groups: [{ id: 'core', tools: [{ id: 'lobster' }] }],
+      },
+    })
+
+    const data = await discover({ url: '', token: '', persist: false })
+
+    expect(data.agents).toEqual([{ id: 'main', name: 'Main', default: true }])
+    expect(data.models).toEqual([{ id: 'gpt-5', alias: undefined, provider: 'openai' }])
+    expect(data.tools).toEqual(['lobster', 'message'])
+    expect(data.channels).toEqual([{ id: 'discord', enabled: true, type: 'discord' }])
+    expect(data.nodes).toEqual([{ id: 'oc-node-1', name: 'MacBook', connected: true }])
+    expect(data.effectiveTools).toEqual({
+      agentId: 'main',
+      sessionKey: 'agent:main:main',
+      profile: undefined,
+      tools: ['lobster'],
+    })
+    const connectFrames = frames.filter((frame) => frame.method === 'connect')
+    expect(connectFrames).toHaveLength(6)
+    const writeConnect = connectFrames.find((frame) =>
+      (frame.params as { scopes?: string[] }).scopes?.includes('operator.write'),
+    )
+    expect(writeConnect?.params).toMatchObject({
+      scopes: ['operator.read', 'operator.write'],
+      caps: ['tool-events'],
+    })
+    for (const frame of connectFrames.filter((frame) => frame !== writeConnect)) {
+      expect((frame.params as { scopes?: string[] }).scopes).toEqual(['operator.read'])
+      expect((frame.params as { auth?: unknown }).auth).toBeUndefined()
+    }
+    expect(frames.map((frame) => frame.method).sort()).toEqual([
+      'agents.list',
+      'channels.status',
+      'connect',
+      'connect',
+      'connect',
+      'connect',
+      'connect',
+      'connect',
+      'node.list',
+      'tools.catalog',
+      'tools.effective',
+      'tools.invoke',
+    ])
   })
 
   it('uses /api/discover when available and returns channels', async () => {
@@ -204,6 +499,76 @@ describe('loadConfig() / saveConfig() / clearConfig()', () => {
   it('clearConfig removes saved config', () => {
     saveConfig(mockConfig)
     clearConfig()
+    expect(loadConfig()).toBeNull()
+  })
+})
+
+describe('loadHostedGatewayConfig()', () => {
+  it('returns a non-persistent same-origin gateway from runtime injection', () => {
+    window.__LOBSTER_BUILDER_GATEWAY__ = {
+      hosted: true,
+      autoConnect: true,
+    }
+
+    expect(loadHostedGatewayConfig()).toEqual({
+      id: 'openclaw-hosted',
+      name: 'Hosting OpenClaw gateway',
+      url: '',
+      token: '',
+      persist: false,
+    })
+  })
+
+  it('uses explicit runtime values when provided', () => {
+    window.__LOBSTER_BUILDER_GATEWAY__ = {
+      hosted: true,
+      id: 'custom-host',
+      name: 'Custom host',
+      url: 'http://gateway.example',
+      token: 'runtime-token',
+      persist: true,
+    }
+
+    expect(loadHostedGatewayConfig()).toEqual({
+      id: 'custom-host',
+      name: 'Custom host',
+      url: 'http://gateway.example',
+      token: 'runtime-token',
+      persist: true,
+    })
+  })
+
+  it('returns null when runtime auto-connect is explicitly disabled', () => {
+    window.__LOBSTER_BUILDER_GATEWAY__ = {
+      hosted: true,
+      autoConnect: false,
+    }
+
+    expect(loadHostedGatewayConfig()).toBeNull()
+  })
+})
+
+describe('saved gateway list', () => {
+  it('saves multiple gateways without embedding them in the active config shape', () => {
+    saveGateway({ id: 'home', name: 'Home', url: 'http://home:18789', token: 'home-token' })
+    saveGateway({ id: 'rescue', name: 'Rescue', url: 'http://rescue:18789', token: 'rescue-token' })
+
+    const gateways = loadGateways()
+    expect(gateways.map((g) => g.id)).toEqual(['rescue', 'home'])
+    expect(loadConfig()).toEqual({
+      id: 'rescue',
+      name: 'Rescue',
+      url: 'http://rescue:18789',
+      token: 'rescue-token',
+    })
+  })
+
+  it('removes a saved gateway and clears the active config when it was selected', () => {
+    saveGateway({ id: 'home', name: 'Home', url: 'http://home:18789', token: 'home-token' })
+    expect(loadConfig()).not.toBeNull()
+
+    const remaining = deleteGateway('home')
+    expect(remaining).toEqual([])
     expect(loadConfig()).toBeNull()
   })
 })

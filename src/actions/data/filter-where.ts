@@ -1,5 +1,6 @@
 import { registerAction } from '../registry';
 import type { ActionDefinition } from '../../types/actions';
+import type { LobsterStep } from '../../types/lobster';
 
 const filterWhere: ActionDefinition = {
   id: 'filter-where',
@@ -14,7 +15,7 @@ const filterWhere: ActionDefinition = {
   ],
   defaults: { condition: '' },
   compile: (config, ctx) => {
-    const step: any = {
+    const step: LobsterStep = {
       id: ctx.nodeId,
       command: `openclaw data filter --condition '${config.condition}'`,
     };

@@ -17,6 +17,7 @@ describe('ActionDefinition', () => {
       category: 'ai',
       icon: 'brain',
       description: 'Send a prompt to an LLM',
+      requiredTools: ['lobster', 'llm-task'],
       inputs: [port],
       outputs: [{ id: 'out', label: 'Response', kind: 'text' }],
       configFields: [field],
@@ -34,8 +35,8 @@ describe('ActionDefinition', () => {
   })
 
   it('supports all valid categories', () => {
-    const categories: ActionDefinition['category'][] = ['ai', 'flow', 'data', 'io', 'meta']
-    expect(categories).toHaveLength(5)
+    const categories: ActionDefinition['category'][] = ['ai', 'flow', 'data', 'io', 'openclaw', 'meta']
+    expect(categories).toHaveLength(6)
   })
 
   it('supports all valid config field types', () => {

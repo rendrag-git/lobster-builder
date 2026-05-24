@@ -4,6 +4,7 @@ import {
   Bot, Sparkles, Search, Globe, Image, GitBranch, CheckSquare, Clock,
   RotateCw, AlertTriangle, Variable, Filter, Shuffle, Merge, Braces,
   Terminal, Wifi, FileText, Save, Bell, Workflow, X,
+  MessageCircle, Wrench,
 } from 'lucide-react'
 import { useWorkflowStore } from '../store/workflow-store'
 import { getAction } from '../actions/init'
@@ -32,6 +33,8 @@ const ICON_MAP: Record<string, LucideIcon> = {
   save: Save,
   bell: Bell,
   workflow: Workflow,
+  message: MessageCircle,
+  wrench: Wrench,
 }
 
 const CATEGORY_STYLES: Record<string, { header: string; handleColor: string; borderSelected: string }> = {
@@ -39,6 +42,7 @@ const CATEGORY_STYLES: Record<string, { header: string; handleColor: string; bor
   flow: { header: 'bg-blue-700',   handleColor: '#3b82f6', borderSelected: '#3b82f6' },
   data: { header: 'bg-green-700',  handleColor: '#22c55e', borderSelected: '#22c55e' },
   io:   { header: 'bg-orange-700', handleColor: '#f97316', borderSelected: '#f97316' },
+  openclaw: { header: 'bg-cyan-700', handleColor: '#06b6d4', borderSelected: '#06b6d4' },
   meta: { header: 'bg-gray-600',   handleColor: '#9ca3af', borderSelected: '#9ca3af' },
 }
 
@@ -67,6 +71,8 @@ function ActionNode({ id, data, selected }: NodeProps<WorkflowNode>) {
   return (
     <div
       onClick={handleClick}
+      data-testid={`workflow-node-${id}`}
+      data-action-id={data.actionId}
       style={{
         minWidth: 180,
         border: `2px solid ${selected ? style.borderSelected : '#374151'}`,

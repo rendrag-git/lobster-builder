@@ -32,6 +32,21 @@ describe('LobsterWorkflowFile', () => {
     expect(step.stdin).toBe('$step1.stdout')
   })
 
+  it('allows OpenClaw native action metadata on a pipeline step', () => {
+    const step: LobsterStep = {
+      id: 'notify',
+      pipeline: 'openclaw.invoke --tool message --action send',
+      openclaw_action: {
+        tool: 'message',
+        action: 'send',
+        args: { provider: 'discord', to: 'ops', message: 'done' },
+        requiredTools: ['lobster', 'message'],
+      },
+    }
+
+    expect(step.openclaw_action?.tool).toBe('message')
+  })
+
   it('allows approval field as boolean or string', () => {
     const stepBool: LobsterStep = { id: 's1', command: 'rm -rf /', approval: true }
     const stepStr: LobsterStep = { id: 's2', command: 'deploy', approval: 'required' }

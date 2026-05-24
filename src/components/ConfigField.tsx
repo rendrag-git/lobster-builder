@@ -31,6 +31,7 @@ export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
             checked={Boolean(value)}
             onChange={(e) => onChange(e.target.checked)}
             className="w-3.5 h-3.5 rounded border-gray-600 bg-gray-800 accent-blue-500"
+            data-testid={`config-field-${field.id}`}
           />
           <label htmlFor={field.id} className="text-xs text-gray-300 cursor-pointer">
             {field.label}
@@ -41,9 +42,11 @@ export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
   }
 
   if (field.type === 'select') {
-    // Resolve options: gateway source wins when connected, static fallback otherwise
-    const options = gatewayOptions ?? field.options ?? []
-    const isLive = gatewayOptions !== null
+    const staticOptions = field.options ?? []
+    const liveOptions = gatewayOptions ?? []
+    const hasLiveOptions = liveOptions.length > 0
+    const options = hasLiveOptions ? liveOptions : staticOptions
+    const isLive = hasLiveOptions
 
     return (
       <div className="mb-3">
@@ -61,6 +64,7 @@ export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
           value={String(value ?? field.defaultValue ?? '')}
           onChange={(e) => onChange(e.target.value)}
           className={baseInput}
+          data-testid={`config-field-${field.id}`}
         >
           {options.length === 0 && <option value="">(no options available)</option>}
           {options.map((opt) => (
@@ -83,6 +87,7 @@ export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
           placeholder={field.placeholder}
           rows={4}
           className={`${baseInput} resize-y font-${field.type === 'code' ? 'mono' : 'sans'}`}
+          data-testid={`config-field-${field.id}`}
         />
       </div>
     )
@@ -98,22 +103,45 @@ export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
           onChange={(e) => onChange(e.target.value === '' ? undefined : Number(e.target.value))}
           placeholder={field.placeholder}
           className={baseInput}
+          data-testid={`config-field-${field.id}`}
         />
       </div>
     )
   }
 
   // Default: text
+  const liveOptions = gatewayOptions ?? []
+  const listId = liveOptions.length > 0 ? `gateway-options-${field.id}` : undefined
   return (
     <div className="mb-3">
-      {label}
+      <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
+        {field.label}
+        {field.required && <span className="text-red-400 ml-1">*</span>}
+        {listId && (
+          <span
+            className="w-1.5 h-1.5 rounded-full bg-green-500 ml-1"
+            title="Live from Gateway"
+          />
+        )}
+      </label>
       <input
         type="text"
         value={String(value ?? '')}
         onChange={(e) => onChange(e.target.value)}
         placeholder={field.placeholder}
+        list={listId}
         className={baseInput}
+        data-testid={`config-field-${field.id}`}
       />
+      {listId && (
+        <datalist id={listId}>
+          {liveOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </datalist>
+      )}
     </div>
   )
 }

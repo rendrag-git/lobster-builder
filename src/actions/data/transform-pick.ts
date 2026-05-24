@@ -1,5 +1,6 @@
 import { registerAction } from '../registry';
 import type { ActionDefinition } from '../../types/actions';
+import type { LobsterStep } from '../../types/lobster';
 
 const transformPick: ActionDefinition = {
   id: 'transform-pick',
@@ -14,7 +15,7 @@ const transformPick: ActionDefinition = {
   ],
   defaults: { fields: '' },
   compile: (config, ctx) => {
-    const step: any = {
+    const step: LobsterStep = {
       id: ctx.nodeId,
       command: `openclaw data pick --fields '${config.fields}'`,
     };

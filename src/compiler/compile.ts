@@ -1,6 +1,6 @@
 import { getAction } from '../actions/registry';
 import type { WorkflowNode, WorkflowEdge, WorkflowMeta } from '../types/graph';
-import type { LobsterWorkflowFile, LobsterStep } from '../types/lobster';
+import type { LobsterWorkflowFile, LobsterStep, OpenClawWorkflowMetadata } from '../types/lobster';
 
 function topoSort(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowNode[] {
   const nodeMap = new Map(nodes.map((n) => [n.id, n]));
@@ -36,6 +36,8 @@ export function compile(
 ): LobsterWorkflowFile {
   const sorted = topoSort(nodes, edges);
   const steps: LobsterStep[] = [];
+  const openclaw = compileOpenClawMetadata(meta);
+  const parallelBundleStep = compileParallelBundleStep(meta);
 
   for (const node of sorted) {
     const action = getAction(node.data.actionId);
@@ -62,12 +64,114 @@ export function compile(
     steps.push(...produced);
   }
 
+  if (parallelBundleStep) {
+    steps.unshift(parallelBundleStep);
+  }
+
   return {
     name: meta.name,
     ...(meta.description ? { description: meta.description } : {}),
     ...(meta.args ? { args: meta.args } : {}),
     ...(meta.env ? { env: meta.env } : {}),
     ...(meta.cwd ? { cwd: meta.cwd } : {}),
+    ...(openclaw ? { openclaw } : {}),
     steps,
+  };
+}
+
+function quotePipelineArg(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+function readPublishedWorkflowRef(ref: string): { workflowId: string; workflowRevision?: number } | null {
+  const trimmed = ref.trim();
+  if (!trimmed) return null;
+  const revisionSep = trimmed.lastIndexOf('@');
+  if (revisionSep <= 0 || revisionSep === trimmed.length - 1) {
+    return { workflowId: trimmed };
+  }
+
+  const revision = Number(trimmed.slice(revisionSep + 1));
+  if (!Number.isInteger(revision) || revision < 1) {
+    return { workflowId: trimmed };
+  }
+  return {
+    workflowId: trimmed.slice(0, revisionSep),
+    workflowRevision: revision,
+  };
+}
+
+function sanitizeBranchId(value: string, index: number): string {
+  const normalized = value.trim().replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '');
+  return normalized || `branch-${index + 1}`;
+}
+
+function uniqueBranchId(base: string, used: Set<string>): string {
+  let candidate = base;
+  let suffix = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+function compileParallelBundleStep(meta: WorkflowMeta): LobsterStep | null {
+  if (meta.bundle?.mode !== 'parallel') return null;
+  const refs = meta.bundle.workflowRefs?.map((ref) => ref.trim()).filter(Boolean) ?? [];
+  if (refs.length === 0) return null;
+
+  const usedIds = new Set<string>();
+  const branches = refs.flatMap((ref, index) => {
+    const parsed = readPublishedWorkflowRef(ref);
+    if (!parsed) return [];
+    const id = uniqueBranchId(sanitizeBranchId(parsed.workflowId, index), usedIds);
+    const pipelineParts = ['lobster.workflow', '--workflow-id', quotePipelineArg(parsed.workflowId)];
+    if (parsed.workflowRevision !== undefined) {
+      pipelineParts.push('--workflow-revision', quotePipelineArg(String(parsed.workflowRevision)));
+    }
+    return [{
+      id,
+      ref,
+      workflowId: parsed.workflowId,
+      ...(parsed.workflowRevision !== undefined ? { workflowRevision: parsed.workflowRevision } : {}),
+      pipeline: pipelineParts.join(' '),
+    }];
+  });
+  if (branches.length === 0) return null;
+
+  return {
+    id: 'openclaw_parallel_bundle',
+    pipeline: `lobster.parallel --branches-json ${quotePipelineArg(JSON.stringify(branches))}`,
+    openclaw_parallel_bundle: {
+      wait: 'all',
+      branches,
+    },
+  };
+}
+
+function compactRecord<T extends object>(value: T): Partial<T> | null {
+  const entries = Object.entries(value as Record<string, unknown>).filter(([, v]) => {
+    if (v === undefined || v === null) return false;
+    if (typeof v === 'string') return v.trim().length > 0;
+    if (Array.isArray(v)) return v.length > 0;
+    return true;
+  });
+  return entries.length > 0 ? Object.fromEntries(entries) as Partial<T> : null;
+}
+
+function compileOpenClawMetadata(meta: WorkflowMeta): OpenClawWorkflowMetadata | null {
+  const gateway = meta.gateway ? compactRecord(meta.gateway) : null;
+  const schedule = meta.schedule ? compactRecord(meta.schedule) : null;
+  const bundle = meta.bundle ? compactRecord(meta.bundle) : null;
+
+  if (!gateway && !schedule && !bundle) return null;
+
+  return {
+    version: 1,
+    ...(gateway ? { gateway } : {}),
+    ...(schedule ? { schedule } : {}),
+    ...(bundle ? { bundle } : {}),
   };
 }

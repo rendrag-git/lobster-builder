@@ -1,5 +1,6 @@
 import { registerAction } from '../registry';
 import type { ActionDefinition } from '../../types/actions';
+import type { LobsterStep } from '../../types/lobster';
 
 const runShellCommand: ActionDefinition = {
   id: 'run-shell-command',
@@ -18,7 +19,7 @@ const runShellCommand: ActionDefinition = {
   ],
   defaults: { command: '', cwd: '' },
   compile: (config, ctx) => {
-    const step: any = {
+    const step: LobsterStep = {
       id: ctx.nodeId,
       command: `openclaw exec --cmd '${config.command}'${config.cwd ? ` --cwd '${config.cwd}'` : ''}`,
     };

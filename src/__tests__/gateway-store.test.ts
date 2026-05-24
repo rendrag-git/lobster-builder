@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { useGatewayStore, resolveGatewayOptions } from '../store/gateway-store'
-import { saveConfig } from '../lib/gateway-client'
+import { loadConfig, saveConfig } from '../lib/gateway-client'
 import type { GatewayConfig } from '../lib/gateway-client'
 
 const mockConfig: GatewayConfig = { url: 'http://localhost:18789', token: 'test-token' }
@@ -21,6 +21,9 @@ const mockDiscovery = {
     { id: 'weather', name: 'weather', description: 'Get weather' },
   ],
   tools: ['exec', 'read'],
+  nodes: [
+    { id: 'oc-node-1', name: 'MacBook', connected: true },
+  ],
 }
 
 function mockFetchWithDiscovery() {
@@ -39,6 +42,57 @@ function mockFetchWithDiscovery() {
           json: () => Promise.resolve({ ok: true, result: { agents: mockDiscovery.agents } }),
         })
       }
+      if (body.tool === 'tools.catalog') {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              ok: true,
+              result: {
+                groups: [
+                  {
+                    id: 'core',
+                    tools: mockDiscovery.tools.map((id) => ({ id })),
+                  },
+                ],
+              },
+            }),
+        })
+      }
+      if (body.tool === 'channels.status') {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              ok: true,
+              result: {
+                channelOrder: mockDiscovery.channels.map((channel) => channel.id),
+                channels: Object.fromEntries(
+                  mockDiscovery.channels.map((channel) => [
+                    channel.id,
+                    { enabled: channel.enabled, type: channel.type },
+                  ]),
+                ),
+              },
+            }),
+        })
+      }
+      if (body.tool === 'node.list') {
+        return Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              ok: true,
+              result: {
+                nodes: mockDiscovery.nodes.map((node) => ({
+                  nodeId: node.id,
+                  displayName: node.name,
+                  connected: node.connected,
+                })),
+              },
+            }),
+        })
+      }
       // session_status — return a model
       return Promise.resolve({
         ok: true,
@@ -55,9 +109,103 @@ function mockFetchWithDiscovery() {
   )
 }
 
+function mockGatewayRpcWithDiscovery() {
+  class MockWebSocket {
+    static CONNECTING = 0
+    static OPEN = 1
+    static CLOSED = 3
+
+    readyState = MockWebSocket.OPEN
+    onmessage: ((event: { data: string }) => void) | null = null
+    onerror: (() => void) | null = null
+    onclose: (() => void) | null = null
+
+    constructor() {
+      setTimeout(() => {
+        this.emit({ type: 'event', event: 'connect.challenge', payload: { nonce: 'nonce-1' } })
+      }, 0)
+    }
+
+    send(raw: string) {
+      const frame = JSON.parse(raw) as Record<string, unknown>
+      if (frame.method === 'connect') {
+        setTimeout(() => {
+          this.emit({
+            type: 'res',
+            id: frame.id,
+            ok: true,
+            payload: {
+              type: 'hello-ok',
+              protocol: 4,
+              server: { version: 'test', connId: 'conn-1' },
+              features: { methods: ['tools.invoke'], events: [] },
+              snapshot: {},
+              auth: { role: 'operator', scopes: ['operator.read', 'operator.write'] },
+              policy: { maxPayload: 1, maxBufferedBytes: 1, tickIntervalMs: 1000 },
+            },
+          })
+        }, 0)
+        return
+      }
+      const output = frame.method === 'agents.list'
+        ? {
+            defaultId: 'atlas',
+            mainKey: 'main',
+            scope: 'per-sender',
+            agents: mockDiscovery.agents,
+          }
+        : frame.method === 'tools.catalog'
+          ? { groups: [{ id: 'core', tools: mockDiscovery.tools.map((id) => ({ id })) }] }
+          : frame.method === 'channels.status'
+            ? {
+                channelOrder: mockDiscovery.channels.map((channel) => channel.id),
+                channels: Object.fromEntries(
+                  mockDiscovery.channels.map((channel) => [
+                    channel.id,
+                    { enabled: channel.enabled, type: channel.type },
+                  ]),
+                ),
+              }
+            : frame.method === 'node.list'
+              ? {
+                  nodes: mockDiscovery.nodes.map((node) => ({
+                    nodeId: node.id,
+                    displayName: node.name,
+                    connected: node.connected,
+                  })),
+                }
+              : {
+                agentId: 'atlas',
+                groups: [{ id: 'core', tools: mockDiscovery.tools.map((id) => ({ id })) }],
+              }
+      setTimeout(() => {
+        this.emit({
+          type: 'res',
+          id: frame.id,
+          ok: true,
+          payload: output,
+        })
+      }, 0)
+    }
+
+    close() {
+      this.readyState = MockWebSocket.CLOSED
+      this.onclose?.()
+    }
+
+    private emit(frame: Record<string, unknown>) {
+      this.onmessage?.({ data: JSON.stringify(frame) })
+    }
+  }
+
+  vi.stubGlobal('WebSocket', MockWebSocket)
+}
+
 function resetStore() {
   useGatewayStore.setState({
     config: null,
+    gateways: [],
+    selectedGatewayId: null,
     status: 'disconnected',
     discovery: null,
     lastError: null,
@@ -65,13 +213,22 @@ function resetStore() {
   })
 }
 
+async function waitForGatewayStatus(status: string) {
+  const deadline = Date.now() + 500
+  while (useGatewayStore.getState().status !== status && Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 10))
+  }
+}
+
 beforeEach(() => {
   resetStore()
   localStorage.clear()
   vi.stubGlobal('fetch', undefined)
+  delete window.__LOBSTER_BUILDER_GATEWAY__
 })
 
 afterEach(() => {
+  delete window.__LOBSTER_BUILDER_GATEWAY__
   vi.unstubAllGlobals()
 })
 
@@ -86,10 +243,37 @@ describe('init()', () => {
     saveConfig(mockConfig)
 
     useGatewayStore.getState().init()
-    // Allow promises to settle
-    await new Promise((r) => setTimeout(r, 10))
+    await waitForGatewayStatus('connected')
 
     expect(useGatewayStore.getState().status).toBe('connected')
+  })
+
+  it('prefers non-persistent hosted same-origin config over saved config', async () => {
+    mockFetchWithDiscovery()
+    mockGatewayRpcWithDiscovery()
+    saveConfig(mockConfig)
+    window.__LOBSTER_BUILDER_GATEWAY__ = {
+      hosted: true,
+      id: 'openclaw-hosted',
+      name: 'Hosting OpenClaw gateway',
+      url: '',
+      token: '',
+      persist: false,
+    }
+
+    useGatewayStore.getState().init()
+    await waitForGatewayStatus('connected')
+
+    const state = useGatewayStore.getState()
+    expect(state.status).toBe('connected')
+    expect(state.config).toEqual({
+      id: 'openclaw-hosted',
+      name: 'Hosting OpenClaw gateway',
+      url: '',
+      token: '',
+    })
+    expect(state.selectedGatewayId).toBe('openclaw-hosted')
+    expect(loadConfig()).toEqual(mockConfig)
   })
 })
 
@@ -170,5 +354,10 @@ describe('resolveGatewayOptions()', () => {
     const options = resolveGatewayOptions('models', mockDiscovery, 'connected')
     expect(options).toHaveLength(1)
     expect(options![0]).toEqual({ label: 'sonnet', value: 'sonnet' })
+  })
+
+  it('maps paired nodes by display label with node id as value', () => {
+    const options = resolveGatewayOptions('nodes', mockDiscovery, 'connected')
+    expect(options).toEqual([{ label: 'MacBook', value: 'oc-node-1' }])
   })
 })

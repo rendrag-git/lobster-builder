@@ -1,0 +1,20 @@
+{
+  "id": "lobster-builder",
+  "name": "Lobster Builder",
+  "description": "Serves the Lobster workflow builder and gateway-local Lobster runtime integration.",
+  "activation": {
+    "onStartup": true
+  },
+  "contracts": {
+    "tools": ["lobster"]
+  },
+  "toolMetadata": {
+    "lobster": {
+      "optional": true
+    }
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false
+  }
+}

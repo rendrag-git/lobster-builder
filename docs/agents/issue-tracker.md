@@ -29,7 +29,7 @@ Active delivery path:
 
 Current proof state:
 
-- The full-product gate is active and not complete. The prior closure was premature; publish/polish still needs a current product audit and verified follow-through.
+- The full-product gate is complete in the configured private tracker. The prior closure was premature, but the reopened publish/polish gate now has current product-audit evidence, review-fix evidence, and a merged public delivery branch.
 - Self-contained package and disposable-gateway proofs are accepted slice evidence, not product closure.
 - Live hosted browser deploy/list/run proof passed on the development gateway: the self-contained plugin served the current built asset from the gateway plugin path, the browser UI showed `Authorize browser`, an operator approved the `Lobster Builder` device request, Deploy reported `Deployed hello-world@3`, `lobster.workflow.list` showed the new revision, and `tools.invoke` with `lobster` by workflow id returned `Hello from Lobster!`.
 - Deploy/setup visibility and the real hosted publish/list/run path now have accepted evidence.
@@ -39,9 +39,9 @@ Current proof state:
 - The hosted Gateway panel no longer exposes stale legacy discovery-route copy. Connected discovery summaries use the native gateway discovery model and include agents, models, channels, skills, tools, nodes, channel targets, and effective tools when available; unavailable channel-target discovery keeps the manual target fallback explicit.
 - Live hosted auth retest found that a bare token-auth plugin URL can fail before OpenClaw creates a pending browser/device request. Builder now reports that state as `Gateway token needed` instead of telling users to approve a non-existent pending request, and README documents the dashboard-authenticated URL or manual-token recovery path.
 - Current full local verification has been refreshed after the package/open clarity follow-up: unit tests, lint, build, browser E2E, package dry-run, diff hygiene, public-boundary grep, stale deploy/Vite grep, and non-mutating development-gateway plugin inspection all passed. The development gateway still reports OpenClaw `2026.5.24`, `lobster-builder` `0.1.0` enabled/activated with one HTTP route and `lobster.workflow.publish/list/get/delete`, plugin doctor has no issues, and the hosted route returns tokenless same-origin config.
-- The verified publish/polish work is now committed, pushed to the public delivery branch, and opened as a public GitHub PR against `main`.
-- Public PR automated review comments about legacy hosted token migration, remote-scope isolation for that migration, and stale in-flight status refresh were addressed and verified with focused and full local checks.
-- Full product audit is recorded in `docs/full-product-audit-2026-05-25.md`; it found no new implementation or documentation blocker in the current branch. The remaining gate is gatekeeper review/acceptance of that audit, PR review/merge decision, or any follow-up fixes the gatekeeper opens. Do not mark the Codex goal complete until the configured gatekeeper explicitly agrees the evidence satisfies the full product gate.
+- The verified publish/polish work was committed, pushed to the public delivery branch, reviewed, and merged into `main`.
+- Public PR automated review comments about legacy hosted token migration, same-origin scope for that migration, remote-scope isolation for that migration, and stale in-flight status refresh were addressed and verified with focused and full local checks.
+- Full product audit is recorded in `docs/full-product-audit-2026-05-25.md`; it found no new implementation or documentation blocker in the merged delivery. The configured private gatekeeper is complete unless reopened with a concrete follow-up blocker.
 - No minimal upstream OpenClaw/Lobster API gap is currently accepted. If plugin-only delivery cannot satisfy the gate, record the exact upstream gap in the private tracker before changing the delivery path.
 
 ## Codex-Ready Issue Format

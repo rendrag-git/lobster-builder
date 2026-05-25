@@ -46,4 +46,4 @@ This audit maps the current Lobster Builder branch against the configured full-p
 
 ## Audit Decision
 
-No new code or documentation blocker was found in this audit. The remaining gate is not an implementation item discovered here; it is gatekeeper acceptance of the full-product evidence, PR review/merge decision, or a newly recorded follow-up blocker.
+No new code or documentation blocker was found in this audit. A later automated PR review found two concrete issues: legacy OpenClaw Control UI session-token migration and refreshed in-flight TaskFlow status mapping. Both were fixed and verified after the audit. The remaining gate is not an implementation item discovered here; it is gatekeeper acceptance of the full-product evidence, PR review/merge decision, or a newly recorded follow-up blocker.

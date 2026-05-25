@@ -11,8 +11,13 @@ import { TemplatePickerModal } from './app/TemplatePickerModal'
 import { GatewayPanel } from './app/GatewayPanel'
 import { useWorkflowStore } from './store/workflow-store'
 import { useGatewayStore } from './store/gateway-store'
+import { useLobsterStore } from './store/lobster-store'
 import { downloadWorkflow, downloadBuilderState, importFromFile } from './lib/file-io'
-import { Upload, Download, FileJson, LayoutTemplate, Sun, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react'
+import { Upload, Download, FileJson, LayoutTemplate, Sun, Moon, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, UploadCloud, Loader2 } from 'lucide-react'
+import { Tooltip } from './components/Tooltip'
+import { useWorkflowGatewayActions } from './hooks/useWorkflowGatewayActions'
+import { gatewayActionErrorLabel, gatewayActionErrorTitle } from './lib/gateway-errors'
+import type { LobsterEnvelope } from './lib/lobster-service'
 
 interface ToolbarProps {
   onShowTemplates: () => void
@@ -25,9 +30,28 @@ interface ToolbarProps {
   onToggleRightPanel: () => void
 }
 
+function deployResultSummary(result: LobsterEnvelope | null): string | null {
+  const firstOutput = result?.output?.[0]
+  if (!firstOutput || typeof firstOutput !== 'object' || Array.isArray(firstOutput)) return null
+  const workflow = firstOutput as Record<string, unknown>
+  const workflowId = typeof workflow.workflowId === 'string' && workflow.workflowId.trim()
+    ? workflow.workflowId.trim()
+    : null
+  const revision = typeof workflow.revision === 'number' && Number.isFinite(workflow.revision)
+    ? workflow.revision
+    : null
+  if (!workflowId) return null
+  return revision === null ? workflowId : `${workflowId}@${revision}`
+}
+
 function Toolbar({ onShowTemplates, onShowGateway, isDark, onToggleDark, sidebarOpen, onToggleSidebar, rightPanelOpen, onToggleRightPanel }: ToolbarProps) {
   const { nodes, edges, workflowMeta, setWorkflowMeta, setNodes, setEdges } = useWorkflowStore()
   const gatewayStatus = useGatewayStore((s) => s.status)
+  const gatewayActions = useWorkflowGatewayActions()
+  const execStatus = useLobsterStore((s) => s.execStatus)
+  const lastError = useLobsterStore((s) => s.lastError)
+  const lastResult = useLobsterStore((s) => s.lastResult)
+  const lastOperation = useLobsterStore((s) => s.lastOperation)
 
   const statusDotColor: Record<typeof gatewayStatus, string> = {
     connected: 'bg-green-500',
@@ -37,6 +61,43 @@ function Toolbar({ onShowTemplates, onShowGateway, isDark, onToggleDark, sidebar
   }
   const nodeCount = nodes.length
   const edgeCount = edges.length
+  const deployedWorkflow = deployResultSummary(lastResult)
+  const successLabel = lastOperation === 'deploy'
+    ? deployedWorkflow
+      ? `Deployed ${deployedWorkflow}`
+      : 'Deploy completed'
+    : lastOperation === 'run'
+      ? 'Test run completed'
+      : lastOperation === 'resume'
+        ? 'Resume completed'
+        : lastOperation === 'schedule'
+          ? 'Schedule updated'
+          : lastOperation === 'unschedule'
+            ? 'Schedule removed'
+            : lastOperation === 'status'
+              ? 'Status refreshed'
+              : 'Gateway action completed'
+  const successTitle = lastOperation === 'deploy' && deployedWorkflow
+    ? `Published workflow ${deployedWorkflow}`
+    : successLabel
+  const runningLabel = lastOperation === 'run'
+    ? 'Running...'
+    : lastOperation === 'resume'
+      ? 'Resuming...'
+      : lastOperation === 'schedule'
+        ? 'Updating schedule...'
+        : lastOperation === 'unschedule'
+          ? 'Removing schedule...'
+          : 'Deploying...'
+  const gatewayActionStatus = execStatus === 'running'
+    ? { label: runningLabel, className: 'text-yellow-300 border-yellow-700/70 bg-yellow-950/40', title: 'Gateway command is still running.' }
+    : execStatus === 'success'
+      ? { label: successLabel, className: 'text-green-300 border-green-700/70 bg-green-950/40', title: successTitle }
+      : execStatus === 'error'
+        ? { label: gatewayActionErrorLabel(lastError), className: 'text-red-300 border-red-700/70 bg-red-950/40', title: gatewayActionErrorTitle(lastError) }
+        : execStatus === 'approval'
+          ? { label: 'Awaiting approval', className: 'text-yellow-300 border-yellow-700/70 bg-yellow-950/40', title: 'Workflow is waiting for approval.' }
+          : null
 
   const handleImport = () => {
     importFromFile(({ nodes: n, edges: e, meta }) => {
@@ -77,6 +138,43 @@ function Toolbar({ onShowTemplates, onShowGateway, isDark, onToggleDark, sidebar
         <span className="text-xs text-gray-500">Gateway</span>
       </button>
       <div className="ml-auto flex items-center gap-1">
+        <Tooltip
+          content={
+            <>
+              <span className="block font-medium text-blue-300">
+                {gatewayActions.scheduleEnabled ? 'Deploy + Cron' : 'Deploy To Gateway'}
+              </span>
+              <span className="mt-1 block">
+                Sends the current workflow to <span className="font-mono">lobster.workflow.publish</span> on {gatewayActions.targetGatewayLabel}.
+              </span>
+              <span className="mt-1 block text-gray-500">
+                Download YAML only saves a local file. Deploy stores a reusable workflow revision on the gateway.
+              </span>
+              {gatewayActions.deployDisabledReason ? <span className="mt-1 block text-yellow-300">{gatewayActions.deployDisabledReason}</span> : null}
+            </>
+          }
+          testId="toolbar-deploy-tooltip"
+        >
+          <button
+            onClick={gatewayActions.deploy}
+            disabled={!gatewayActions.canDeploy}
+            title={gatewayActions.deployDisabledReason ?? `Deploy to ${gatewayActions.targetGatewayLabel}`}
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-blue-300 hover:text-blue-200 hover:bg-gray-800 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            data-testid="toolbar-deploy-btn"
+          >
+            {gatewayActions.busy ? <Loader2 size={12} className="animate-spin" /> : <UploadCloud size={12} />}
+            <span>{gatewayActions.scheduleEnabled ? 'Deploy + Cron' : 'Deploy'}</span>
+          </button>
+        </Tooltip>
+        {gatewayActionStatus ? (
+          <span
+            className={`max-w-40 truncate rounded border px-2 py-1 text-xs ${gatewayActionStatus.className}`}
+            title={gatewayActionStatus.title}
+            data-testid="gateway-action-status"
+          >
+            {gatewayActionStatus.label}
+          </span>
+        ) : null}
         <button
           onClick={onShowTemplates}
           title="Browse templates"
@@ -97,16 +195,16 @@ function Toolbar({ onShowTemplates, onShowGateway, isDark, onToggleDark, sidebar
         <button
           onClick={handleExportYaml}
           disabled={nodes.length === 0}
-          title="Export as .lobster YAML"
+          title="Download local .lobster YAML. This does not deploy to the gateway."
           className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-400 hover:text-gray-100 hover:bg-gray-800 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <Download size={12} />
-          Export YAML
+          Download YAML
         </button>
         <button
           onClick={handleExportProject}
           disabled={nodes.length === 0}
-          title="Export builder project as JSON"
+          title="Download local Builder project JSON. This does not deploy to the gateway."
           className="flex items-center gap-1.5 px-2.5 py-1 text-xs text-gray-400 hover:text-gray-100 hover:bg-gray-800 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           <FileJson size={12} />
@@ -139,7 +237,7 @@ function Toolbar({ onShowTemplates, onShowGateway, isDark, onToggleDark, sidebar
   )
 }
 
-type RightTab = 'config' | 'yaml'
+type RightTab = 'config' | 'deploy'
 
 function RightPanel() {
   const [activeTab, setActiveTab] = useState<RightTab>('config')
@@ -160,15 +258,15 @@ function RightPanel() {
           Config
         </button>
         <button
-          onClick={() => setActiveTab('yaml')}
+          onClick={() => setActiveTab('deploy')}
           data-testid="yaml-preview-tab"
           className={`flex-1 py-2 text-xs font-medium transition-colors ${
-            activeTab === 'yaml'
+            activeTab === 'deploy'
               ? 'text-white border-b-2 border-blue-500 bg-gray-800/40'
               : 'text-gray-500 hover:text-gray-300'
           }`}
         >
-          YAML
+          Deploy
         </button>
       </div>
 

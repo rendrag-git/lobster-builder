@@ -203,7 +203,7 @@ describe('YamlPreview readiness', () => {
     expect(screen.getByTestId('publish-workflow-btn')).toBeDisabled()
   })
 
-  it('disables Publish + Cron when no invoking session is discovered', () => {
+  it('disables Deploy + Cron when no invoking session is discovered', () => {
     useWorkflowStore.setState({
       nodes: [
         node('shell', 'run-shell-command', {
@@ -341,6 +341,15 @@ describe('YamlPreview readiness', () => {
         },
       },
     })
+    useGatewayStore.setState({
+      config: gateway,
+      gateways: [gateway],
+      selectedGatewayId: gateway.id,
+      status: 'connected',
+      discovery: null,
+      lastError: null,
+      lastRefresh: Date.now(),
+    })
     useLobsterStore.setState({
       setScheduleEnabled,
       unschedule,
@@ -350,21 +359,30 @@ describe('YamlPreview readiness', () => {
 
     expect(screen.getByTestId('schedule-controls')).toHaveTextContent('cron-scheduled-workflow')
     fireEvent.click(screen.getByTestId('pause-schedule-btn'))
-    await waitFor(() => expect(setScheduleEnabled).toHaveBeenCalledWith('cron-scheduled-workflow', false))
+    await waitFor(() => expect(setScheduleEnabled).toHaveBeenCalledWith('cron-scheduled-workflow', false, { gatewayConfig: gateway }))
     expect(useWorkflowStore.getState().workflowMeta.schedule?.enabled).toBe(false)
 
     fireEvent.click(screen.getByTestId('resume-schedule-btn'))
-    await waitFor(() => expect(setScheduleEnabled).toHaveBeenCalledWith('cron-scheduled-workflow', true))
+    await waitFor(() => expect(setScheduleEnabled).toHaveBeenCalledWith('cron-scheduled-workflow', true, { gatewayConfig: gateway }))
     expect(useWorkflowStore.getState().workflowMeta.schedule?.enabled).toBe(true)
 
     fireEvent.click(screen.getByTestId('remove-schedule-btn'))
-    await waitFor(() => expect(unschedule).toHaveBeenCalledWith('cron-scheduled-workflow'))
+    await waitFor(() => expect(unschedule).toHaveBeenCalledWith('cron-scheduled-workflow', { gatewayConfig: gateway }))
     expect(useWorkflowStore.getState().workflowMeta.schedule?.enabled).toBe(false)
     expect(useWorkflowStore.getState().workflowMeta.schedule?.jobId).toBeUndefined()
   })
 
   it('shows managed run handles and cancels by flow id', async () => {
     const cancel = vi.fn(async () => undefined)
+    useGatewayStore.setState({
+      config: gateway,
+      gateways: [gateway],
+      selectedGatewayId: gateway.id,
+      status: 'connected',
+      discovery: null,
+      lastError: null,
+      lastRefresh: Date.now(),
+    })
     useLobsterStore.setState({
       execStatus: 'approval',
       currentRun: {
@@ -392,6 +410,66 @@ describe('YamlPreview readiness', () => {
     expect(screen.getByTestId('lobster-run-handle')).toHaveTextContent('flow-run-1')
     expect(screen.getByTestId('lobster-run-handle')).toHaveTextContent('waiting')
     fireEvent.click(screen.getByTestId('cancel-run-btn'))
-    await waitFor(() => expect(cancel).toHaveBeenCalledWith('flow-run-1'))
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith('flow-run-1', { gatewayConfig: gateway }))
+  })
+
+  it('blocks new gateway actions while an approval is pending and refreshes managed run status', async () => {
+    const status = vi.fn(async () => ({
+      ok: true,
+      status: 'ok',
+      output: [],
+      run: { flowId: 'flow-run-1', status: 'succeeded' },
+      requiresApproval: null,
+    }))
+    useWorkflowStore.setState({
+      nodes: [node('echo', 'run-shell-command', { command: 'echo ok' })],
+      workflowMeta: { name: 'Approval pending', description: '' },
+    })
+    useGatewayStore.setState({
+      config: gateway,
+      gateways: [gateway],
+      selectedGatewayId: gateway.id,
+      status: 'connected',
+      discovery: {
+        agents: [],
+        models: [],
+        channels: [],
+        skills: [],
+        tools: ['lobster'],
+        effectiveTools: null,
+      },
+      lastError: null,
+      lastRefresh: Date.now(),
+    })
+    useLobsterStore.setState({
+      execStatus: 'approval',
+      currentRun: {
+        flowId: 'flow-run-1',
+        revision: 2,
+        status: 'waiting',
+        currentStep: 'await_lobster_approval',
+      },
+      lastResult: {
+        ok: true,
+        status: 'needs_approval',
+        output: [],
+        requiresApproval: {
+          type: 'approval_request',
+          prompt: 'Approve?',
+          items: [],
+          resumeToken: 'resume-token',
+        },
+      },
+      status,
+    } as Partial<ReturnType<typeof useLobsterStore.getState>>)
+
+    render(<YamlPreview />)
+
+    expect(screen.getByTestId('run-workflow-btn')).toBeDisabled()
+    expect(screen.getByTestId('publish-workflow-btn')).toBeDisabled()
+    expect(screen.getByTestId('run-workflow-tooltip')).toHaveTextContent('Resolve the pending approval')
+
+    fireEvent.click(screen.getByTestId('refresh-run-status-btn'))
+    await waitFor(() => expect(status).toHaveBeenCalledWith('flow-run-1', { gatewayConfig: gateway }))
   })
 })

@@ -291,7 +291,7 @@ test('disables run and publish for an empty canvas', async ({ page }) => {
 
   await page.getByTestId('publish-workflow-tooltip').hover()
   await expect(
-    page.getByRole('tooltip').filter({ hasText: 'Publish stores the workflow artifact' }),
+    page.getByRole('tooltip').filter({ hasText: 'Deploy stores the workflow artifact' }),
   ).toBeVisible()
 
   await expect(page.getByTestId('run-workflow-btn')).toBeDisabled()
@@ -395,7 +395,7 @@ test('selects a gateway, builds a scheduled Lobster flow, parses YAML, and publi
   await page.getByTestId('yaml-preview-tab').click()
   await page.getByTestId('publish-workflow-tooltip').hover()
   await expect(
-    page.getByRole('tooltip').filter({ hasText: 'Builder does not choose a Discord delivery target yet' }),
+    page.getByRole('tooltip').filter({ hasText: 'Message delivery happens only if the workflow includes a Send Channel Message block' }),
   ).toBeVisible()
 
   const yamlText = await page.getByTestId('yaml-preview-content').innerText()

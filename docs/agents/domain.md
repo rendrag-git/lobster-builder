@@ -49,7 +49,7 @@ Builder should make missing permissions visible before publish/run when discover
 - OpenClaw Lobster Flow Builder PRD: `docs/openclaw-lobster-flow-builder-prd.md`
 - OpenClaw Native Lobster Actions PRD: `docs/openclaw-native-lobster-actions-prd.md`
 
-The original builder gate was previously treated as satisfied by local `lobster-flow` fixture evidence, but that evidence is historical only and is no longer a completion gate. The active gatekeeper is agent-context OpenClaw-native actions, tracked by the current Linear gatekeeper pointer in `docs/agents/issue-tracker.md`.
+The original builder gate was previously treated as satisfied by local `lobster-flow` fixture evidence, but that evidence is historical only and is no longer a completion gate. The current active gatekeeper is the full Lobster Builder OpenClaw plugin product, tracked by the current Linear gatekeeper pointer in `docs/agents/issue-tracker.md`. Native-action and installed-package proofs are evidence for that gate, not completion by themselves.
 
 ## Out Of Bounds
 

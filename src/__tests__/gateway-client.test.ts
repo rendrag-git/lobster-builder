@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { discover, testConnection, loadConfig, loadHostedGatewayConfig, saveConfig, clearConfig, loadGateways, saveGateway, deleteGateway } from '../lib/gateway-client'
+import { discover, testConnection, loadConfig, loadHostedGatewayConfig, saveConfig, clearConfig, loadGateways, saveGateway, deleteGateway, callGatewayRpc } from '../lib/gateway-client'
 import type { GatewayConfig } from '../lib/gateway-client'
 
 const mockConfig: GatewayConfig = { url: 'http://localhost:18789', token: 'test-token' }
@@ -155,6 +155,8 @@ function mockHostedGatewayRpc(results: {
 beforeEach(() => {
   vi.stubGlobal('fetch', undefined)
   localStorage.clear()
+  sessionStorage.clear()
+  window.history.replaceState(null, '', '/')
   delete window.__LOBSTER_BUILDER_GATEWAY__
 })
 
@@ -164,6 +166,47 @@ afterEach(() => {
 })
 
 describe('discover()', () => {
+  it('preserves gateway WebSocket close reasons for auth failures', async () => {
+    class ClosingWebSocket {
+      static CONNECTING = 0
+      static OPEN = 1
+      static CLOSED = 3
+
+      readyState = ClosingWebSocket.OPEN
+      onmessage: ((event: { data: string }) => void) | null = null
+      onerror: (() => void) | null = null
+      onclose: ((event: { reason: string }) => void) | null = null
+
+      constructor() {
+        setTimeout(() => {
+          this.onmessage?.({
+            data: JSON.stringify({ type: 'event', event: 'connect.challenge', payload: { nonce: 'nonce-1' } }),
+          })
+        }, 0)
+      }
+
+      send(raw: string) {
+        const frame = JSON.parse(raw) as Record<string, unknown>
+        if (frame.method === 'connect') {
+          setTimeout(() => {
+            this.readyState = ClosingWebSocket.CLOSED
+            this.onclose?.({ reason: 'unauthorized: gateway token missing' })
+          }, 0)
+        }
+      }
+
+      close() {
+        this.readyState = ClosingWebSocket.CLOSED
+      }
+    }
+
+    vi.stubGlobal('WebSocket', ClosingWebSocket)
+
+    await expect(callGatewayRpc({ url: '', token: '' }, 'tools.catalog')).rejects.toThrow(
+      /gateway token missing/,
+    )
+  })
+
   it('maps agents_list and session_status results into DiscoveryData (Phase 1 fallback)', async () => {
     const agentsResult = {
       agents: [
@@ -186,7 +229,18 @@ describe('discover()', () => {
     const channelsResult = {
       channelOrder: ['discord', 'telegram'],
       channels: {
-        discord: { configured: true, enabled: true, type: 'discord' },
+        discord: {
+          configured: true,
+          enabled: true,
+          type: 'discord',
+          guilds: [
+            {
+              id: 'guild-1',
+              name: 'Ops Guild',
+              channels: [{ id: 'general', name: 'General' }],
+            },
+          ],
+        },
         telegram: { configured: true, enabled: false, type: 'telegram' },
       },
     }
@@ -235,6 +289,9 @@ describe('discover()', () => {
     expect(data.channels).toEqual([
       { id: 'discord', enabled: true, type: 'discord' },
       { id: 'telegram', enabled: false, type: 'telegram' },
+    ])
+    expect(data.channelTargets).toEqual([
+      { id: 'channel:general', label: 'General (Ops Guild) discord', provider: 'discord', guildId: 'guild-1' },
     ])
     expect(data.skills).toEqual([])
     expect(data.tools).toEqual(['lobster', 'message'])
@@ -310,7 +367,13 @@ describe('discover()', () => {
       tools: { groups: [{ id: 'core', tools: [{ id: 'lobster' }, { id: 'message' }] }] },
       channels: {
         channelOrder: ['discord'],
-        channels: { discord: { enabled: true, type: 'discord' } },
+        channels: {
+          discord: {
+            enabled: true,
+            type: 'discord',
+            targets: [{ id: 'announcements', name: 'Announcements' }],
+          },
+        },
       },
       nodes: {
         nodes: [{ nodeId: 'oc-node-1', displayName: 'MacBook', connected: true }],
@@ -327,6 +390,9 @@ describe('discover()', () => {
     expect(data.models).toEqual([{ id: 'gpt-5', alias: undefined, provider: 'openai' }])
     expect(data.tools).toEqual(['lobster', 'message'])
     expect(data.channels).toEqual([{ id: 'discord', enabled: true, type: 'discord' }])
+    expect(data.channelTargets).toEqual([
+      { id: 'channel:announcements', label: 'Announcements discord', provider: 'discord' },
+    ])
     expect(data.nodes).toEqual([{ id: 'oc-node-1', name: 'MacBook', connected: true }])
     expect(data.effectiveTools).toEqual({
       agentId: 'main',
@@ -535,6 +601,89 @@ describe('loadHostedGatewayConfig()', () => {
       url: 'http://gateway.example',
       token: 'runtime-token',
       persist: true,
+    })
+  })
+
+  it('hydrates hosted gateway token from a URL fragment and removes it from the address bar', () => {
+    window.history.replaceState(null, '', '/plugins/lobster-builder/#token=fragment-token&tab=builder')
+    window.__LOBSTER_BUILDER_GATEWAY__ = {
+      hosted: true,
+      autoConnect: true,
+    }
+
+    expect(loadHostedGatewayConfig()).toEqual({
+      id: 'openclaw-hosted',
+      name: 'Hosting OpenClaw gateway',
+      url: '',
+      token: 'fragment-token',
+      persist: false,
+    })
+    expect(window.location.hash).toBe('#tab=builder')
+    expect(sessionStorage.getItem(`lobster-builder.gateway.token.v1:ws://${window.location.host}`)).toBe('fragment-token')
+  })
+
+  it('reuses a hosted session token without persisting it to localStorage', () => {
+    sessionStorage.setItem(`lobster-builder.gateway.token.v1:ws://${window.location.host}`, 'session-token')
+    window.__LOBSTER_BUILDER_GATEWAY__ = {
+      hosted: true,
+      autoConnect: true,
+    }
+
+    expect(loadHostedGatewayConfig()).toEqual({
+      id: 'openclaw-hosted',
+      name: 'Hosting OpenClaw gateway',
+      url: '',
+      token: 'session-token',
+      persist: false,
+    })
+    expect(localStorage.getItem('lobster-gateway')).toBeNull()
+  })
+
+  it('can reuse OpenClaw Control UI session token for the same hosted gateway origin', () => {
+    sessionStorage.setItem(`openclaw.control.token.v1:ws://${window.location.host}`, 'openclaw-session-token')
+    window.__LOBSTER_BUILDER_GATEWAY__ = {
+      hosted: true,
+      autoConnect: true,
+    }
+
+    expect(loadHostedGatewayConfig()?.token).toBe('openclaw-session-token')
+  })
+
+  it('hydrates same-origin Gateway RPC calls from the hosted session token', async () => {
+    const frames = mockHostedGatewayRpc({
+      agents: { agents: [] },
+      sessionStatus: {},
+      tools: { groups: [] },
+      channels: { channels: {} },
+      nodes: { nodes: [] },
+      effective: { groups: [] },
+    })
+    sessionStorage.setItem(`lobster-builder.gateway.token.v1:ws://${window.location.host}`, 'session-token')
+
+    await callGatewayRpc({ url: '', token: '', persist: false }, 'agents.list')
+
+    const connectFrame = frames.find((frame) => frame.method === 'connect')
+    expect(connectFrame?.params).toMatchObject({
+      auth: { token: 'session-token' },
+    })
+  })
+
+  it('hydrates concrete Gateway RPC URLs from the same-origin hosted session token', async () => {
+    const frames = mockHostedGatewayRpc({
+      agents: { agents: [] },
+      sessionStatus: {},
+      tools: { groups: [] },
+      channels: { channels: {} },
+      nodes: { nodes: [] },
+      effective: { groups: [] },
+    })
+    sessionStorage.setItem(`lobster-builder.gateway.token.v1:ws://${window.location.host}`, 'session-token')
+
+    await callGatewayRpc({ url: `http://${window.location.host}`, token: '', persist: false }, 'agents.list')
+
+    const connectFrame = frames.find((frame) => frame.method === 'connect')
+    expect(connectFrame?.params).toMatchObject({
+      auth: { token: 'session-token' },
     })
   })
 

@@ -21,8 +21,11 @@ const runShellCommand: ActionDefinition = {
   compile: (config, ctx) => {
     const step: LobsterStep = {
       id: ctx.nodeId,
-      command: `openclaw exec --cmd '${config.command}'${config.cwd ? ` --cwd '${config.cwd}'` : ''}`,
+      command: String(config.command ?? ''),
     };
+    if (config.cwd) {
+      step.cwd = String(config.cwd);
+    }
     if (ctx.incomingEdges.length > 0) {
       step.stdin = `$${ctx.incomingEdges[0].sourceNodeId}.stdout`;
     }

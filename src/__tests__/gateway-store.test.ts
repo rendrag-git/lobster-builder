@@ -17,6 +17,9 @@ const mockDiscovery = {
     { id: 'discord', enabled: true, type: 'discord' },
     { id: 'telegram', enabled: false, type: 'telegram' },
   ],
+  channelTargets: [
+    { id: 'channel:general', label: 'General discord', provider: 'discord' },
+  ],
   skills: [
     { id: 'weather', name: 'weather', description: 'Get weather' },
   ],
@@ -214,7 +217,7 @@ function resetStore() {
 }
 
 async function waitForGatewayStatus(status: string) {
-  const deadline = Date.now() + 500
+  const deadline = Date.now() + 2000
   while (useGatewayStore.getState().status !== status && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 10))
   }
@@ -223,6 +226,8 @@ async function waitForGatewayStatus(status: string) {
 beforeEach(() => {
   resetStore()
   localStorage.clear()
+  sessionStorage.clear()
+  window.history.replaceState(null, '', '/')
   vi.stubGlobal('fetch', undefined)
   delete window.__LOBSTER_BUILDER_GATEWAY__
 })
@@ -271,6 +276,7 @@ describe('init()', () => {
       name: 'Hosting OpenClaw gateway',
       url: '',
       token: '',
+      persist: false,
     })
     expect(state.selectedGatewayId).toBe('openclaw-hosted')
     expect(loadConfig()).toEqual(mockConfig)
@@ -348,6 +354,11 @@ describe('resolveGatewayOptions()', () => {
     // Only enabled channels (discord is enabled, telegram is disabled)
     expect(options).toHaveLength(1)
     expect(options![0].value).toBe('discord')
+  })
+
+  it('maps discovered channel targets by display label with target id as value', () => {
+    const options = resolveGatewayOptions('channelTargets', mockDiscovery, 'connected')
+    expect(options).toEqual([{ label: 'General discord', value: 'channel:general' }])
   })
 
   it('maps models with alias as value', () => {

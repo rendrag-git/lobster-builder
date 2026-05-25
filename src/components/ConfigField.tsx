@@ -1,5 +1,6 @@
 import type { ConfigField as ConfigFieldDef } from '../types/actions'
-import { useGatewayOptions } from '../store/gateway-store'
+import { useGatewayOptions, useGatewayStore } from '../store/gateway-store'
+import type { ConnectionStatus, DiscoveryData } from '../store/gateway-store'
 
 interface ConfigFieldProps {
   field: ConfigFieldDef
@@ -13,6 +14,13 @@ export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
 
   // Always call hook at top level (Rules of Hooks). Returns null when disconnected or no source.
   const gatewayOptions = useGatewayOptions(field.gatewaySource)
+  const { status: gatewayStatus, discovery } = useGatewayStore()
+
+  const description = field.description ? (
+    <p className="mt-1 text-[11px] leading-4 text-gray-500" title={field.description}>
+      {field.description}
+    </p>
+  ) : null
 
   const label = (
     <label className="block text-xs text-gray-400 mb-1">
@@ -37,6 +45,7 @@ export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
             {field.label}
           </label>
         </div>
+        {description}
       </div>
     )
   }
@@ -73,6 +82,7 @@ export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
             </option>
           ))}
         </select>
+        {description}
       </div>
     )
   }
@@ -89,6 +99,7 @@ export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
           className={`${baseInput} resize-y font-${field.type === 'code' ? 'mono' : 'sans'}`}
           data-testid={`config-field-${field.id}`}
         />
+        {description}
       </div>
     )
   }
@@ -105,6 +116,7 @@ export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
           className={baseInput}
           data-testid={`config-field-${field.id}`}
         />
+        {description}
       </div>
     )
   }
@@ -112,6 +124,10 @@ export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
   // Default: text
   const liveOptions = gatewayOptions ?? []
   const listId = liveOptions.length > 0 ? `gateway-options-${field.id}` : undefined
+  const channelTargetFallback =
+    field.gatewaySource === 'channelTargets' && liveOptions.length === 0
+      ? channelTargetFallbackText(gatewayStatus, discovery?.channelDiscoveryStatus)
+      : null
   return (
     <div className="mb-3">
       <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
@@ -142,6 +158,29 @@ export function ConfigField({ field, value, onChange }: ConfigFieldProps) {
           ))}
         </datalist>
       )}
+      {description}
+      {channelTargetFallback && (
+        <p
+          className="mt-1 text-[11px] leading-4 text-amber-300/80"
+          title={channelTargetFallback}
+          data-testid={`config-field-${field.id}-fallback`}
+        >
+          {channelTargetFallback}
+        </p>
+      )}
     </div>
   )
+}
+
+function channelTargetFallbackText(
+  status: ConnectionStatus,
+  channelDiscoveryStatus: DiscoveryData['channelDiscoveryStatus'] | undefined,
+): string {
+  if (status !== 'connected') {
+    return 'Connect a gateway to discover targets, or enter a target manually.'
+  }
+  if (channelDiscoveryStatus === 'available') {
+    return 'This gateway did not expose channel targets. Enter a target manually, such as channel:<id>.'
+  }
+  return 'Gateway channel target discovery is unavailable. Enter a target manually, such as channel:<id>.'
 }

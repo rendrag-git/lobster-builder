@@ -35,7 +35,7 @@ export interface ConfigField {
   /** Whether this field is required */
   required?: boolean
   /** When set, populates options from live Gateway discovery data */
-  gatewaySource?: 'agents' | 'models' | 'channels' | 'skills' | 'tools' | 'nodes'
+  gatewaySource?: 'agents' | 'models' | 'channels' | 'channelTargets' | 'skills' | 'tools' | 'nodes'
 }
 
 export interface CompileContext {

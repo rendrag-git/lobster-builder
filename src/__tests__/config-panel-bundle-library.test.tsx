@@ -1,6 +1,6 @@
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConfigPanel } from '../app/ConfigPanel'
 import { useGatewayStore } from '../store/gateway-store'
 import { useLobsterStore } from '../store/lobster-store'
@@ -39,12 +39,17 @@ beforeEach(() => {
     lastError: null,
     currentRun: null,
     publishedWorkflows: [],
+    publishedWorkflowsGatewayKey: null,
     publishedWorkflowsStatus: 'idle',
     publishedWorkflowsError: null,
     haltedWorkflows: [],
     pendingResumeGatewayConfig: null,
     refreshPublishedWorkflows: refreshPublishedWorkflowsAction,
   })
+})
+
+afterEach(() => {
+  cleanup()
 })
 
 describe('ConfigPanel bundle library', () => {
@@ -87,6 +92,7 @@ describe('ConfigPanel bundle library', () => {
           reusable: true,
         },
       ],
+      publishedWorkflowsGatewayKey: 'home',
       publishedWorkflowsStatus: 'ready',
     })
 
@@ -117,5 +123,24 @@ describe('ConfigPanel bundle library', () => {
     await user.click(screen.getByTestId('workflow-library-refresh'))
 
     expect(refreshPublishedWorkflows).toHaveBeenCalledWith({ gatewayConfig: gateway })
+  })
+
+  it('does not show published workflow rows from another gateway', () => {
+    useLobsterStore.setState({
+      publishedWorkflows: [
+        {
+          workflowId: 'other-flow',
+          name: 'Other Flow',
+          revision: 1,
+        },
+      ],
+      publishedWorkflowsGatewayKey: 'other',
+      publishedWorkflowsStatus: 'ready',
+    })
+
+    render(<ConfigPanel />)
+
+    expect(screen.queryByTestId('workflow-library-row')).not.toBeInTheDocument()
+    expect(screen.getByTestId('workflow-library-stale')).toHaveTextContent('Refresh to load workflows')
   })
 })

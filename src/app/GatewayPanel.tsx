@@ -3,6 +3,7 @@ import { X, RefreshCw, Wifi, WifiOff, Eye, EyeOff, Trash2, CircleHelp } from 'lu
 import { useGatewayStore } from '../store/gateway-store'
 import type { SavedGateway } from '../store/gateway-store'
 import { Tooltip } from '../components/Tooltip'
+import { isGatewayBrowserPairingError, isGatewayTokenMissingError } from '../lib/gateway-errors'
 
 interface GatewayPanelProps {
   onClose: () => void
@@ -32,6 +33,11 @@ export function GatewayPanel({ onClose }: GatewayPanelProps) {
   const sourceGateway = sourceGatewayId
     ? gateways.find((gateway) => gateway.id === sourceGatewayId)
     : null
+  const isHostedSameOrigin = Boolean(config?.persist === false && !config.url.trim())
+  const browserPairingNeeded = isGatewayBrowserPairingError(lastError)
+  const gatewayTokenNeeded = isGatewayTokenMissingError(lastError)
+  const discoveredNodeCount = discovery?.nodes?.length ?? 0
+  const discoveredTargetCount = discovery?.channelTargets?.length ?? 0
 
   const handleConnect = () => {
     const nextName = name.trim()
@@ -99,6 +105,21 @@ export function GatewayPanel({ onClose }: GatewayPanelProps) {
 
         {/* Body */}
         <div className="px-4 py-3 space-y-3">
+          {isHostedSameOrigin ? (
+            <div className="rounded border border-cyan-900/70 bg-cyan-950/30 px-2 py-2 text-xs text-cyan-100">
+              Hosted Builder is using same-origin OpenClaw gateway RPC. Leave URL and token blank unless you are adding a separate manual gateway.
+            </div>
+          ) : null}
+          {browserPairingNeeded ? (
+            <div className="rounded border border-yellow-900/70 bg-yellow-950/30 px-2 py-2 text-xs text-yellow-100">
+              Browser authorization is required. Open the OpenClaw dashboard for this gateway, approve the pending Lobster Builder device request, then retry the gateway action. Keep the Builder URL and bearer token fields blank for the hosted plugin.
+            </div>
+          ) : null}
+          {gatewayTokenNeeded ? (
+            <div className="rounded border border-yellow-900/70 bg-yellow-950/30 px-2 py-2 text-xs text-yellow-100">
+              Gateway auth is missing. Open this Builder from an OpenClaw dashboard URL that includes gateway auth, or add a manual gateway connection token below, then retry the gateway action.
+            </div>
+          ) : null}
           {/* URL */}
           <div>
             <label className="block text-xs text-gray-400 mb-1">Gateway Name</label>
@@ -117,7 +138,7 @@ export function GatewayPanel({ onClose }: GatewayPanelProps) {
               <span>Gateway URL</span>
               <Tooltip
                 side="bottom-left"
-                content="Leave this blank when Builder is served by the local dev server. The browser calls /tools/invoke on this origin and Vite proxies to the OpenClaw gateway. Only enter a full URL when that gateway allows browser CORS."
+                content="Leave blank for the gateway-hosted plugin path. If the gateway requires auth, open Builder from an OpenClaw dashboard URL with gateway auth. Enter a full URL only for a separate manual gateway or local Vite development."
               >
                 <CircleHelp size={12} className="text-gray-600" aria-hidden="true" />
               </Tooltip>
@@ -126,7 +147,7 @@ export function GatewayPanel({ onClose }: GatewayPanelProps) {
               type="text"
               value={url}
               onChange={(e) => setUrl(e.target.value)}
-              placeholder="Leave blank for local dev proxy"
+              placeholder="Blank for hosted gateway"
               className="w-full px-2 py-1.5 text-xs bg-gray-800 border border-gray-700 rounded text-gray-200 placeholder-gray-600 focus:outline-none focus:border-gray-500"
               data-testid="gateway-url-input"
             />
@@ -134,7 +155,15 @@ export function GatewayPanel({ onClose }: GatewayPanelProps) {
 
           {/* Token */}
           <div>
-            <label className="block text-xs text-gray-400 mb-1">Bearer Token</label>
+            <label className="flex items-center gap-1 text-xs text-gray-400 mb-1">
+              <span>Bearer Token</span>
+              <Tooltip
+                side="bottom-left"
+                content="Manual or advanced connection only. The hosted plugin page should normally receive auth from the OpenClaw dashboard URL; paste a token here only when using a separate manual gateway connection."
+              >
+                <CircleHelp size={12} className="text-gray-600" aria-hidden="true" />
+              </Tooltip>
+            </label>
             <div className="relative">
               <input
                 type={showToken ? 'text' : 'password'}
@@ -253,9 +282,21 @@ export function GatewayPanel({ onClose }: GatewayPanelProps) {
                   {discovery.channels.length} channel{discovery.channels.length !== 1 ? 's' : ''}{' '}
                   · {discovery.skills.length} skill{discovery.skills.length !== 1 ? 's' : ''}
                 </p>
-                <p className="text-gray-600 italic text-[10px]">
-                  Full catalog (channels, skills, tools) requires Gateway /api/discover (Phase 2)
+                <p>
+                  {discovery.tools.length} tool{discovery.tools.length !== 1 ? 's' : ''} ·{' '}
+                  {discoveredNodeCount} node{discoveredNodeCount !== 1 ? 's' : ''}
                 </p>
+                <p>
+                  {discoveredTargetCount} target{discoveredTargetCount !== 1 ? 's' : ''} ·{' '}
+                  {discovery.effectiveTools
+                    ? `${discovery.effectiveTools.tools.length} effective tool${discovery.effectiveTools.tools.length !== 1 ? 's' : ''}`
+                    : 'effective tools unavailable'}
+                </p>
+                {discovery.channelDiscoveryStatus === 'unavailable' ? (
+                  <p className="text-gray-600 italic text-[10px]">
+                    Channel target discovery is unavailable; manual target entry remains enabled.
+                  </p>
+                ) : null}
               </>
             ) : (
               <p className="text-gray-600">(connect to discover)</p>

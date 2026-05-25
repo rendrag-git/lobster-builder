@@ -73,10 +73,11 @@ describe('IO actions', () => {
   it('run-shell-command compiles with command', () => {
     const action = getAction('run-shell-command');
     const steps = action!.compile(
-      { command: 'ls -la' },
+      { command: 'ls -la', cwd: '/workspace' },
       { nodeId: 'n5', incomingEdges: [], outgoingEdges: [] },
     );
-    expect(steps[0].command).toContain('ls -la');
+    expect(steps[0]).toMatchObject({ command: 'ls -la', cwd: '/workspace' });
+    expect(steps[0].command).not.toContain('openclaw exec');
   });
 
   it('http-request compiles with method and url', () => {
@@ -112,7 +113,7 @@ describe('OpenClaw actions', () => {
     const action = getAction('send-channel-message');
     expect(action?.requiredTools).toEqual(['lobster', 'message']);
     const steps = action!.compile(
-      { channel: 'discord', target: 'ops', message: 'done' },
+      { channel: 'discord', guildId: 'guild-1', target: 'channel:ops', message: 'done' },
       compileContext({ nodeId: 'notify', incomingEdges: [] }),
     );
 
@@ -122,7 +123,7 @@ describe('OpenClaw actions', () => {
       openclaw_action: {
         tool: 'message',
         action: 'send',
-        args: { provider: 'discord', to: 'ops', message: 'done' },
+        args: { provider: 'discord', to: 'channel:ops', message: 'done', guildId: 'guild-1' },
         requiredTools: ['lobster', 'message'],
       },
     });

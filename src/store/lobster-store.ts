@@ -16,6 +16,7 @@ import { useGatewayStore } from './gateway-store'
 
 export type LobsterExecStatus = 'idle' | 'running' | 'approval' | 'success' | 'error' | 'cancelled'
 export type PublishedWorkflowsStatus = 'idle' | 'loading' | 'ready' | 'error'
+export type LobsterOperation = 'run' | 'deploy' | 'resume' | 'status' | 'cancel' | 'schedule' | 'unschedule'
 
 interface HaltedWorkflow {
   id: string
@@ -29,8 +30,10 @@ interface LobsterState {
   execStatus: LobsterExecStatus
   lastResult: LobsterEnvelope | null
   lastError: string | null
+  lastOperation: LobsterOperation | null
   currentRun: LobsterRunHandle | null
   publishedWorkflows: LobsterPublishedWorkflow[]
+  publishedWorkflowsGatewayKey: string | null
   publishedWorkflowsStatus: PublishedWorkflowsStatus
   publishedWorkflowsError: string | null
   haltedWorkflows: HaltedWorkflow[]
@@ -46,12 +49,12 @@ interface LobsterState {
     gatewayConfig?: GatewayConfig
   }) => Promise<LobsterEnvelope | null>
   resume: (resumeRef: { token?: string; approvalId?: string }, approve: boolean, opts?: { gatewayConfig?: GatewayConfig }) => Promise<void>
-  list: () => Promise<void>
+  list: (opts?: { gatewayConfig?: GatewayConfig }) => Promise<void>
   refreshPublishedWorkflows: (opts?: { gatewayConfig?: GatewayConfig }) => Promise<void>
-  status: (id: string) => Promise<LobsterEnvelope | null>
-  cancel: (id: string) => Promise<void>
-  unschedule: (id: string) => Promise<LobsterEnvelope | null>
-  setScheduleEnabled: (id: string, enabled: boolean) => Promise<LobsterEnvelope | null>
+  status: (id: string, opts?: { gatewayConfig?: GatewayConfig }) => Promise<LobsterEnvelope | null>
+  cancel: (id: string, opts?: { gatewayConfig?: GatewayConfig }) => Promise<void>
+  unschedule: (id: string, opts?: { gatewayConfig?: GatewayConfig }) => Promise<LobsterEnvelope | null>
+  setScheduleEnabled: (id: string, enabled: boolean, opts?: { gatewayConfig?: GatewayConfig }) => Promise<LobsterEnvelope | null>
   reset: () => void
 }
 
@@ -61,19 +64,40 @@ function getConfig() {
   return config
 }
 
+export function gatewayConfigKey(config: GatewayConfig): string {
+  return config.id?.trim() || config.url?.trim() || config.name?.trim() || 'gateway'
+}
+
+function execStatusForResult(result: LobsterEnvelope): LobsterExecStatus {
+  if (!result.ok) return 'error'
+  if (result.requiresApproval) return 'approval'
+  const runStatus = result.run?.status
+  return execStatusForRunStatus(runStatus, 'success')
+}
+
+function execStatusForRunStatus(runStatus: string | undefined, fallback: LobsterExecStatus = 'running'): LobsterExecStatus {
+  if (!runStatus) return fallback
+  if (runStatus === 'cancelled') return 'cancelled'
+  if (runStatus === 'failed' || runStatus === 'lost') return 'error'
+  if (runStatus === 'succeeded') return 'success'
+  return 'running'
+}
+
 export const useLobsterStore = create<LobsterState>((set, get) => ({
   execStatus: 'idle',
   lastResult: null,
   lastError: null,
+  lastOperation: null,
   currentRun: null,
   publishedWorkflows: [],
+  publishedWorkflowsGatewayKey: null,
   publishedWorkflowsStatus: 'idle',
   publishedWorkflowsError: null,
   haltedWorkflows: [],
   pendingResumeGatewayConfig: null,
 
   run: async (workflowYaml, opts) => {
-    set({ execStatus: 'running', lastError: null, lastResult: null, currentRun: null, pendingResumeGatewayConfig: null })
+    set({ execStatus: 'running', lastError: null, lastResult: null, lastOperation: 'run', currentRun: null, pendingResumeGatewayConfig: null })
     try {
       const { gatewayConfig, ...runOpts } = opts ?? {}
       const targetGateway = gatewayConfig ?? getConfig()
@@ -100,7 +124,7 @@ export const useLobsterStore = create<LobsterState>((set, get) => ({
   },
 
   publish: async (workflowYaml, opts) => {
-    set({ execStatus: 'running', lastError: null, lastResult: null, pendingResumeGatewayConfig: null })
+    set({ execStatus: 'running', lastError: null, lastResult: null, lastOperation: 'deploy', pendingResumeGatewayConfig: null })
     try {
       const { gatewayConfig, ...publishOpts } = opts ?? {}
       const result = await lobsterPublishWorkflow(gatewayConfig ?? getConfig(), workflowYaml, publishOpts)
@@ -120,7 +144,7 @@ export const useLobsterStore = create<LobsterState>((set, get) => ({
   },
 
   resume: async (resumeRef, approve, opts) => {
-    set({ execStatus: 'running', lastError: null })
+    set({ execStatus: 'running', lastError: null, lastOperation: 'resume' })
     try {
       const result = await lobsterResume(
         opts?.gatewayConfig ?? get().pendingResumeGatewayConfig ?? getConfig(),
@@ -131,9 +155,11 @@ export const useLobsterStore = create<LobsterState>((set, get) => ({
       set({
         lastResult: result,
         currentRun: result.run ?? get().currentRun,
-        execStatus: result.ok ? 'success' : 'error',
+        execStatus: execStatusForResult(result),
         lastError: result.ok ? null : (result.error?.message ?? 'Unknown error'),
-        pendingResumeGatewayConfig: null,
+        pendingResumeGatewayConfig: result.ok && result.requiresApproval
+          ? (opts?.gatewayConfig ?? get().pendingResumeGatewayConfig ?? getConfig())
+          : null,
       })
     } catch (err) {
       set({
@@ -143,12 +169,14 @@ export const useLobsterStore = create<LobsterState>((set, get) => ({
     }
   },
 
-  list: async () => {
+  list: async (opts) => {
     try {
-      const result = await lobsterList(getConfig())
+      const targetGateway = opts?.gatewayConfig ?? getConfig()
+      const result = await lobsterList(targetGateway)
       const publishedWorkflows = normalizePublishedWorkflowList(result)
       set({
         publishedWorkflows,
+        publishedWorkflowsGatewayKey: gatewayConfigKey(targetGateway),
         publishedWorkflowsStatus: result.ok ? 'ready' : 'error',
         publishedWorkflowsError: result.ok ? null : (result.error?.message ?? 'Could not load published workflows.'),
         haltedWorkflows: result.ok && Array.isArray(result.output)
@@ -173,9 +201,11 @@ export const useLobsterStore = create<LobsterState>((set, get) => ({
   refreshPublishedWorkflows: async (opts) => {
     set({ publishedWorkflowsStatus: 'loading', publishedWorkflowsError: null })
     try {
-      const result = await lobsterList(opts?.gatewayConfig ?? getConfig())
+      const targetGateway = opts?.gatewayConfig ?? getConfig()
+      const result = await lobsterList(targetGateway)
       set({
         publishedWorkflows: normalizePublishedWorkflowList(result),
+        publishedWorkflowsGatewayKey: gatewayConfigKey(targetGateway),
         publishedWorkflowsStatus: result.ok ? 'ready' : 'error',
         publishedWorkflowsError: result.ok ? null : (result.error?.message ?? 'Could not load published workflows.'),
       })
@@ -187,10 +217,21 @@ export const useLobsterStore = create<LobsterState>((set, get) => ({
     }
   },
 
-  status: async (id) => {
+  status: async (id, opts) => {
     try {
-      const result = await lobsterStatus(getConfig(), id)
-      if (result.run) set({ currentRun: result.run, lastResult: result })
+      const result = await lobsterStatus(opts?.gatewayConfig ?? getConfig(), id)
+      if (result.run) {
+        const runStatus = result.run.status
+        set({
+          currentRun: result.run,
+          lastResult: result,
+          lastOperation: 'status',
+          execStatus: execStatusForRunStatus(runStatus),
+          lastError: runStatus === 'failed' || runStatus === 'lost'
+            ? (result.error?.message ?? `Run ${runStatus}.`)
+            : null,
+        })
+      }
       return result
     } catch (err) {
       set({ lastError: err instanceof Error ? err.message : String(err) })
@@ -198,11 +239,12 @@ export const useLobsterStore = create<LobsterState>((set, get) => ({
     }
   },
 
-  cancel: async (id) => {
+  cancel: async (id, opts) => {
     try {
-      const result = await lobsterCancel(getConfig(), id)
+      const result = await lobsterCancel(opts?.gatewayConfig ?? getConfig(), id)
       set({
         lastResult: result,
+        lastOperation: 'cancel',
         currentRun: result.run ?? get().currentRun,
         execStatus: result.ok ? 'cancelled' : 'error',
         lastError: result.ok ? null : (result.error?.message ?? 'Cancel failed'),
@@ -212,16 +254,18 @@ export const useLobsterStore = create<LobsterState>((set, get) => ({
     }
   },
 
-  unschedule: async (id) => {
-    set({ execStatus: 'running', lastError: null })
+  unschedule: async (id, opts) => {
+    set({ execStatus: 'running', lastError: null, lastOperation: 'unschedule' })
     try {
-      const result = await lobsterUnschedule(getConfig(), id)
+      const targetGateway = opts?.gatewayConfig ?? getConfig()
+      const result = await lobsterUnschedule(targetGateway, id)
       set({
         lastResult: result,
+        lastOperation: 'unschedule',
         execStatus: result.ok ? 'success' : 'error',
         lastError: result.ok ? null : (result.error?.message ?? 'Unknown error'),
       })
-      await get().list()
+      await get().list({ gatewayConfig: targetGateway })
       return result
     } catch (err) {
       set({
@@ -232,12 +276,13 @@ export const useLobsterStore = create<LobsterState>((set, get) => ({
     }
   },
 
-  setScheduleEnabled: async (id, enabled) => {
-    set({ execStatus: 'running', lastError: null })
+  setScheduleEnabled: async (id, enabled, opts) => {
+    set({ execStatus: 'running', lastError: null, lastOperation: 'schedule' })
     try {
-      const result = await lobsterSetScheduleEnabled(getConfig(), id, enabled)
+      const result = await lobsterSetScheduleEnabled(opts?.gatewayConfig ?? getConfig(), id, enabled)
       set({
         lastResult: result,
+        lastOperation: 'schedule',
         execStatus: result.ok ? 'success' : 'error',
         lastError: result.ok ? null : (result.error?.message ?? 'Unknown error'),
       })
@@ -252,6 +297,6 @@ export const useLobsterStore = create<LobsterState>((set, get) => ({
   },
 
   reset: () => {
-    set({ execStatus: 'idle', lastResult: null, lastError: null, currentRun: null, pendingResumeGatewayConfig: null })
+    set({ execStatus: 'idle', lastResult: null, lastError: null, lastOperation: null, currentRun: null, pendingResumeGatewayConfig: null })
   },
 }))

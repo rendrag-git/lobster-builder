@@ -96,6 +96,84 @@ describe('ConfigField gateway options', () => {
     expect(within(select).queryByRole('option', { name: 'Gateway default' })).toBeNull()
   })
 
+  it('offers discovered channel targets for text fields while preserving manual entry', () => {
+    useGatewayStore.setState({
+      status: 'connected',
+      discovery: {
+        agents: [],
+        models: [],
+        channels: [{ id: 'discord', enabled: true, type: 'discord' }],
+        channelTargets: [{ id: 'channel:general', label: 'General discord', provider: 'discord' }],
+        channelDiscoveryStatus: 'available',
+        skills: [],
+        tools: [],
+        effectiveTools: null,
+      },
+    })
+    const action = getAction('send-channel-message')
+    const targetField = action?.configFields.find((field) => field.id === 'target')
+    expect(targetField).toBeDefined()
+
+    render(<ConfigField field={targetField!} value="" onChange={() => undefined} />)
+
+    const input = screen.getByTestId('config-field-target')
+    expect(input).toHaveAttribute('list', 'gateway-options-target')
+    const datalist = document.getElementById('gateway-options-target')
+    const option = datalist?.querySelector('option[value="channel:general"]')
+    expect(option?.textContent).toBe('General discord')
+  })
+
+  it('explains manual target fallback when channel discovery exposes no targets', () => {
+    useGatewayStore.setState({
+      status: 'connected',
+      discovery: {
+        agents: [],
+        models: [],
+        channels: [{ id: 'discord', enabled: true, type: 'discord' }],
+        channelTargets: [],
+        channelDiscoveryStatus: 'available',
+        skills: [],
+        tools: [],
+        effectiveTools: null,
+      },
+    })
+    const action = getAction('send-channel-message')
+    const targetField = action?.configFields.find((field) => field.id === 'target')
+    expect(targetField).toBeDefined()
+
+    render(<ConfigField field={targetField!} value="" onChange={() => undefined} />)
+
+    const input = screen.getByTestId('config-field-target')
+    expect(input).not.toHaveAttribute('list')
+    expect(screen.getByTestId('config-field-target-fallback')).toHaveTextContent(
+      'This gateway did not expose channel targets. Enter a target manually, such as channel:<id>.',
+    )
+  })
+
+  it('explains manual target fallback when channel discovery is unavailable', () => {
+    useGatewayStore.setState({
+      status: 'connected',
+      discovery: {
+        agents: [],
+        models: [],
+        channels: [],
+        channelDiscoveryStatus: 'unavailable',
+        skills: [],
+        tools: [],
+        effectiveTools: null,
+      },
+    })
+    const action = getAction('send-channel-message')
+    const targetField = action?.configFields.find((field) => field.id === 'target')
+    expect(targetField).toBeDefined()
+
+    render(<ConfigField field={targetField!} value="" onChange={() => undefined} />)
+
+    expect(screen.getByTestId('config-field-target-fallback')).toHaveTextContent(
+      'Gateway channel target discovery is unavailable. Enter a target manually, such as channel:<id>.',
+    )
+  })
+
   it('offers discovered paired nodes for the Node Action node field while preserving manual entry', () => {
     useGatewayStore.setState({
       status: 'connected',

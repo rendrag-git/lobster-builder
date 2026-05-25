@@ -48,7 +48,9 @@ export const useGatewayStore = create<GatewayState>((set, get) => ({
     const generation = ++connectGeneration
     set({ status: 'connecting', lastError: null })
     const shouldPersist = config.persist !== false
-    const saved = shouldPersist ? saveGateway(config) : normalizeSavedGateway(config)
+    const saved = shouldPersist
+      ? saveGateway(config)
+      : { ...normalizeSavedGateway(config), persist: false }
     try {
       const discovery = await discover(saved)
       if (generation !== connectGeneration) return
@@ -175,6 +177,11 @@ export function resolveGatewayOptions(
       return (data as DiscoveryData['channels'])
         .filter((c) => c.enabled)
         .map((c) => ({ label: c.id, value: c.id }))
+    case 'channelTargets':
+      return (data as NonNullable<DiscoveryData['channelTargets']>).map((target) => ({
+        label: target.label ?? target.id,
+        value: target.id,
+      }))
     case 'skills':
       return (data as DiscoveryData['skills']).map((s) => ({
         label: s.name,

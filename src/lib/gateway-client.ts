@@ -24,6 +24,7 @@ export interface DiscoveryData {
   agents: Array<{ id: string; name?: string; default?: boolean }>
   models: Array<{ id: string; alias?: string; provider?: string }>
   channels: Array<{ id: string; enabled: boolean; type: string }>
+  channelTargets?: Array<{ id: string; label?: string; provider: string; guildId?: string; type?: string }>
   channelDiscoveryStatus?: 'available' | 'unavailable'
   skills: Array<{ id: string; name: string; description?: string }>
   tools: string[]
@@ -42,12 +43,16 @@ const TIMEOUT_MS = 5000
 const GATEWAY_PROTOCOL_VERSION = 4
 const STORAGE_KEY = 'lobster-gateway'
 const GATEWAYS_STORAGE_KEY = 'lobster-gateways'
+const HOSTED_TOKEN_SESSION_KEY_PREFIX = 'lobster-builder.gateway.token.v1:'
+const OPENCLAW_TOKEN_SESSION_KEY_PREFIX = 'openclaw.control.token.v1:'
+const OPENCLAW_LEGACY_TOKEN_SESSION_KEY = 'openclaw.control.token.v1'
 const CONTROL_UI_OPERATOR_ROLE = 'operator'
 const CONTROL_UI_READ_SCOPES = ['operator.read']
 const CONTROL_UI_WRITE_SCOPES = [
   'operator.read',
   'operator.write',
 ]
+const CLIENT_VERSION = '0.1.0'
 
 type ConnectChallengePayload = {
   nonce?: unknown
@@ -95,6 +100,119 @@ function resolveGatewayWebSocketUrl(config: GatewayConfig): string {
   url.search = ''
   url.hash = ''
   return url.toString()
+}
+
+function readSessionStorage(): Storage | null {
+  try {
+    return typeof sessionStorage === 'undefined' ? null : sessionStorage
+  } catch {
+    return null
+  }
+}
+
+function resolveGatewayTokenScope(rawUrl: string): string {
+  const trimmed = rawUrl.trim()
+  if (!trimmed) {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${proto}//${window.location.host}`
+  }
+  try {
+    const parsed = new URL(trimmed, window.location.href)
+    const pathname = parsed.pathname === '/' ? '' : parsed.pathname.replace(/\/+$/, '')
+    return `${parsed.protocol}//${parsed.host}${pathname}`
+  } catch {
+    return trimmed
+  }
+}
+
+function isHostedGatewayScope(rawUrl: string): boolean {
+  const trimmed = rawUrl.trim()
+  if (!trimmed) return true
+  try {
+    const parsed = new URL(trimmed, window.location.href)
+    return parsed.origin === window.location.origin
+  } catch {
+    return false
+  }
+}
+
+function hostedTokenSessionKey(rawUrl: string): string {
+  return `${HOSTED_TOKEN_SESSION_KEY_PREFIX}${resolveGatewayTokenScope(rawUrl)}`
+}
+
+function openClawTokenSessionKey(rawUrl: string): string {
+  return `${OPENCLAW_TOKEN_SESSION_KEY_PREFIX}${resolveGatewayTokenScope(rawUrl)}`
+}
+
+function readHostedSessionToken(rawUrl: string): string {
+  const storage = readSessionStorage()
+  if (!storage) return ''
+  try {
+    const scopedToken = storage.getItem(hostedTokenSessionKey(rawUrl))?.trim()
+    if (scopedToken) return scopedToken
+    const openClawToken = storage.getItem(openClawTokenSessionKey(rawUrl))?.trim()
+    if (openClawToken) return openClawToken
+    if (!isHostedGatewayScope(rawUrl)) return ''
+    const legacyToken = storage.getItem(OPENCLAW_LEGACY_TOKEN_SESSION_KEY)?.trim()
+    if (legacyToken) {
+      storage.setItem(hostedTokenSessionKey(rawUrl), legacyToken)
+      return legacyToken
+    }
+    return ''
+  } catch {
+    return ''
+  }
+}
+
+function withHostedSessionToken(config: GatewayConfig): GatewayConfig {
+  if (config.token.trim()) return config
+  const token = readHostedSessionToken(config.url)
+    || (config.url.trim() && isHostedGatewayScope(config.url) ? readHostedSessionToken('') : '')
+  return token ? { ...config, token } : config
+}
+
+function writeHostedSessionToken(rawUrl: string, token: string): void {
+  const storage = readSessionStorage()
+  if (!storage) return
+  try {
+    const key = hostedTokenSessionKey(rawUrl)
+    const normalized = token.trim()
+    if (normalized) {
+      storage.setItem(key, normalized)
+    } else {
+      storage.removeItem(key)
+    }
+  } catch {
+    // best-effort
+  }
+}
+
+function consumeUrlToken(): string {
+  if (typeof window === 'undefined') return ''
+  try {
+    const url = new URL(window.location.href)
+    const params = new URLSearchParams(url.search)
+    const hashParams = new URLSearchParams(url.hash.startsWith('#') ? url.hash.slice(1) : url.hash)
+    const token = (hashParams.get('token') ?? params.get('token') ?? '').trim()
+    let shouldCleanUrl = false
+    if (hashParams.has('token')) {
+      hashParams.delete('token')
+      shouldCleanUrl = true
+    }
+    if (params.has('token')) {
+      params.delete('token')
+      shouldCleanUrl = true
+    }
+    if (shouldCleanUrl && typeof window.history?.replaceState === 'function') {
+      url.search = params.toString()
+      const nextHash = hashParams.toString()
+      url.hash = nextHash ? `#${nextHash}` : ''
+      window.history.replaceState(window.history.state, '', url)
+    }
+    return token
+  } catch {
+    return ''
+  }
 }
 
 function readObject(value: unknown): Record<string, unknown> | null {
@@ -198,7 +316,7 @@ async function connectFrame(
       client: {
         id: 'openclaw-control-ui',
         displayName: 'Lobster Builder',
-        version: '0.0.0',
+        version: CLIENT_VERSION,
         platform: 'browser',
         mode: 'ui',
       },
@@ -245,6 +363,7 @@ export async function callGatewayRpc(
   params: Record<string, unknown> = {},
   opts: GatewayRpcOptions = {},
 ): Promise<unknown> {
+  config = withHostedSessionToken(config)
   if (typeof WebSocket !== 'function') {
     throw new Error('Gateway WebSocket is not available in this browser context.')
   }
@@ -298,8 +417,11 @@ export async function callGatewayRpc(
     ws.onerror = () => {
       finish('reject', new Error(`Gateway WebSocket error contacting ${url}`))
     }
-    ws.onclose = () => {
-      finish('reject', new Error(`Gateway WebSocket closed before ${method} completed.`))
+    ws.onclose = (event) => {
+      const reason = typeof event?.reason === 'string' && event.reason.trim()
+        ? `: ${event.reason.trim()}`
+        : ''
+      finish('reject', new Error(`Gateway WebSocket closed before ${method} completed${reason}.`))
     }
     ws.onmessage = (event) => {
       try {
@@ -346,6 +468,7 @@ export async function invokeGatewayTool(
   tool: string,
   args: Record<string, unknown> = {},
 ): Promise<unknown> {
+  config = withHostedSessionToken(config)
   if (!config.token.trim()) {
     const payload = await callGatewayRpc(config, 'tools.invoke', {
       name: tool,
@@ -470,6 +593,7 @@ function extractModels(statusResult: unknown): DiscoveryData['models'] {
 }
 
 async function fetchDiscoverEndpoint(config: GatewayConfig): Promise<DiscoveryData> {
+  config = withHostedSessionToken(config)
   const base = config.url || ''
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
@@ -643,6 +767,116 @@ function extractChannels(statusResult: unknown): DiscoveryData['channels'] {
   })
 }
 
+function readString(record: Record<string, unknown> | null | undefined, keys: string[]): string | undefined {
+  for (const key of keys) {
+    const value = record?.[key]
+    if (typeof value === 'string' && value.trim()) return value.trim()
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value)
+  }
+  return undefined
+}
+
+function channelTargetValue(id: string): string {
+  return id.includes(':') ? id : `channel:${id}`
+}
+
+function extractChannelTargets(statusResult: unknown): NonNullable<DiscoveryData['channelTargets']> {
+  const result = readObject(statusResult)
+  if (!result) return []
+
+  const targets = new Map<string, { id: string; label?: string; provider: string; guildId?: string; type?: string }>()
+  const addTarget = (
+    provider: string | undefined,
+    value: unknown,
+    inheritedGuildId?: string,
+    inheritedGuildName?: string,
+  ) => {
+    const record = readObject(value)
+    const rawId = typeof value === 'string' || typeof value === 'number'
+      ? String(value)
+      : readString(record, ['target', 'to', 'value', 'channelId', 'id'])
+    if (!rawId) return
+
+    const targetProvider = provider ?? readString(record, ['provider', 'channel', 'type'])
+    if (!targetProvider) return
+
+    const guildId = readString(record, ['guildId', 'guild_id', 'serverId', 'server_id']) ?? inheritedGuildId
+    const name = readString(record, ['name', 'label', 'displayName', 'display_name'])
+    const type = readString(record, ['kind', 'type'])
+    const id = channelTargetValue(rawId)
+    const labelParts = [
+      name ?? rawId,
+      inheritedGuildName || guildId ? `(${inheritedGuildName ?? guildId})` : '',
+      targetProvider,
+    ].filter(Boolean)
+    targets.set(`${targetProvider}:${guildId ?? ''}:${id}`, {
+      id,
+      label: labelParts.join(' '),
+      provider: targetProvider,
+      ...(guildId ? { guildId } : {}),
+      ...(type ? { type } : {}),
+    })
+  }
+
+  const addTargetArray = (
+    provider: string | undefined,
+    values: unknown,
+    inheritedGuildId?: string,
+    inheritedGuildName?: string,
+  ) => {
+    if (!Array.isArray(values)) return
+    for (const value of values) addTarget(provider, value, inheritedGuildId, inheritedGuildName)
+  }
+
+  addTargetArray(undefined, result.channelTargets)
+  addTargetArray(undefined, result.targets)
+
+  const channels = readObject(result.channels)
+  if (channels) {
+    for (const [provider, value] of Object.entries(channels)) {
+      const channelRecord = readObject(value)
+      addTargetArray(provider, channelRecord?.targets)
+      addTargetArray(provider, channelRecord?.channelTargets)
+      addTargetArray(provider, channelRecord?.channels)
+
+      const guilds = channelRecord?.guilds
+      if (Array.isArray(guilds)) {
+        for (const guild of guilds) {
+          const guildRecord = readObject(guild)
+          const guildId = readString(guildRecord, ['guildId', 'guild_id', 'serverId', 'server_id', 'id'])
+          const guildName = readString(guildRecord, ['name', 'label'])
+          addTargetArray(provider, guildRecord?.channels, guildId, guildName)
+          addTargetArray(provider, guildRecord?.targets, guildId, guildName)
+        }
+      }
+    }
+  }
+
+  const channelAccounts = readObject(result.channelAccounts)
+  if (channelAccounts) {
+    for (const [provider, accounts] of Object.entries(channelAccounts)) {
+      if (!Array.isArray(accounts)) continue
+      for (const account of accounts) {
+        const accountRecord = readObject(account)
+        const guilds = accountRecord?.guilds
+        if (Array.isArray(guilds)) {
+          for (const guild of guilds) {
+            const guildRecord = readObject(guild)
+            const guildId = readString(guildRecord, ['guildId', 'guild_id', 'serverId', 'server_id', 'id'])
+            const guildName = readString(guildRecord, ['name', 'label'])
+            addTargetArray(provider, guildRecord?.channels, guildId, guildName)
+            addTargetArray(provider, guildRecord?.targets, guildId, guildName)
+          }
+        }
+        addTargetArray(provider, accountRecord?.channels)
+        addTargetArray(provider, accountRecord?.targets)
+      }
+    }
+  }
+
+  return [...targets.values()].sort((a, b) => (a.label ?? a.id).localeCompare(b.label ?? b.id))
+}
+
 function defaultSessionInfoFromAgentsList(agentsResult: unknown): { sessionKey?: string; agentId?: string } {
   const result = readObject(agentsResult)
   if (!result) return {}
@@ -757,6 +991,7 @@ async function discoverViaGatewayRpc(config: GatewayConfig): Promise<DiscoveryDa
     agents: extractAgentsList(agentsResult),
     models: extractModels(statusResult),
     channels: extractChannels(channelsResult),
+    channelTargets: extractChannelTargets(channelsResult),
     channelDiscoveryStatus: channelsSettled.status === 'fulfilled' ? 'available' : 'unavailable',
     skills: [],
     tools: extractTools(toolsResult),
@@ -846,6 +1081,7 @@ export async function discover(config: GatewayConfig): Promise<DiscoveryData> {
     agents,
     models: extractModels(statusResult),
     channels: extractChannels(channelsResult),
+    channelTargets: extractChannelTargets(channelsResult),
     channelDiscoveryStatus: channelsSettled.status === 'fulfilled' ? 'available' : 'unavailable',
     skills: [],
     tools: extractTools(toolsResult),
@@ -894,7 +1130,10 @@ export function loadHostedGatewayConfig(): GatewayConfig | null {
     ? raw.name.trim()
     : 'Hosting OpenClaw gateway'
   const url = typeof raw.url === 'string' ? raw.url : ''
-  const token = typeof raw.token === 'string' ? raw.token : ''
+  const injectedToken = typeof raw.token === 'string' ? raw.token.trim() : ''
+  const urlToken = consumeUrlToken()
+  if (urlToken) writeHostedSessionToken(url, urlToken)
+  const token = injectedToken || urlToken || readHostedSessionToken(url)
 
   return {
     id,

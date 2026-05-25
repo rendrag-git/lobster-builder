@@ -59,7 +59,54 @@ describe('GatewayPanel', () => {
     render(<GatewayPanel onClose={vi.fn()} />)
 
     expect(screen.getByTestId('gateway-url-input')).toHaveValue('')
-    expect(screen.getByPlaceholderText('Leave blank for local dev proxy')).toBeInTheDocument()
+    expect(screen.getByPlaceholderText('Blank for hosted gateway')).toBeInTheDocument()
+  })
+
+  it('explains hosted same-origin browser auth without asking for a token', () => {
+    useGatewayStore.setState({
+      config: {
+        id: 'openclaw-hosted',
+        name: 'Hosting OpenClaw gateway',
+        url: '',
+        token: '',
+        persist: false,
+      },
+      gateways: [],
+      selectedGatewayId: 'openclaw-hosted',
+      status: 'error',
+      lastError: 'NOT_PAIRED: pairing required',
+    })
+
+    render(<GatewayPanel onClose={vi.fn()} />)
+
+    expect(screen.getByText(/Hosted Builder is using same-origin OpenClaw gateway RPC/)).toBeInTheDocument()
+    expect(screen.getByText(/Browser authorization is required/)).toBeInTheDocument()
+    expect(screen.getByTestId('gateway-url-input')).toHaveValue('')
+    expect(screen.getByTestId('gateway-token-input')).toHaveValue('')
+  })
+
+  it('explains token-missing hosted gateway auth separately from pairing approval', () => {
+    useGatewayStore.setState({
+      config: {
+        id: 'openclaw-hosted',
+        name: 'Hosting OpenClaw gateway',
+        url: '',
+        token: '',
+        persist: false,
+      },
+      gateways: [],
+      selectedGatewayId: 'openclaw-hosted',
+      status: 'error',
+      lastError: 'INVALID_REQUEST: unauthorized: gateway token missing',
+    })
+
+    render(<GatewayPanel onClose={vi.fn()} />)
+
+    expect(screen.getByText(/Gateway auth is missing/)).toBeInTheDocument()
+    expect(screen.getByText(/Open this Builder from an OpenClaw dashboard URL/)).toBeInTheDocument()
+    expect(screen.queryByText(/approve the pending Lobster Builder device request/)).not.toBeInTheDocument()
+    expect(screen.getByTestId('gateway-url-input')).toHaveValue('')
+    expect(screen.getByTestId('gateway-token-input')).toHaveValue('')
   })
 
   it('initializes the form from the active saved gateway', () => {
@@ -75,6 +122,38 @@ describe('GatewayPanel', () => {
     expect(screen.getByTestId('gateway-name-input')).toHaveValue('Home')
     expect(screen.getByTestId('gateway-url-input')).toHaveValue('http://home:18789')
     expect(screen.getByTestId('gateway-token-input')).toHaveValue('home-token')
+  })
+
+  it('summarizes native gateway discovery without stale api discover copy', () => {
+    useGatewayStore.setState({
+      config: homeGateway,
+      gateways: [homeGateway],
+      selectedGatewayId: homeGateway.id,
+      status: 'connected',
+      discovery: {
+        agents: [{ id: 'builder', name: 'Builder' }],
+        models: [{ id: 'mock/gpt' }],
+        channels: [{ id: 'discord', enabled: true, type: 'discord' }],
+        channelTargets: [{ id: 'channel:general', label: 'general', provider: 'discord' }],
+        channelDiscoveryStatus: 'available',
+        skills: [{ id: 'lobster', name: 'Lobster' }],
+        tools: ['lobster', 'message'],
+        nodes: [{ id: 'node-1', name: 'Desk Node', connected: true }],
+        effectiveTools: {
+          agentId: 'builder',
+          sessionKey: 'session-1',
+          tools: ['lobster', 'message'],
+        },
+      },
+    })
+
+    render(<GatewayPanel onClose={vi.fn()} />)
+
+    expect(screen.getByText(/1 agent/)).toBeInTheDocument()
+    expect(screen.getByText(/2 tools/)).toBeInTheDocument()
+    expect(screen.getByText(/1 target/)).toBeInTheDocument()
+    expect(screen.getByText(/2 effective tools/)).toBeInTheDocument()
+    expect(screen.queryByText(/api\/discover|Phase 2/i)).not.toBeInTheDocument()
   })
 
   it('creates a new gateway from edited fields instead of overwriting the selected gateway id', async () => {

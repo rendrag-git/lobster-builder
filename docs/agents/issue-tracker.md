@@ -6,7 +6,7 @@ This public repository keeps tracker guidance generic. Do not commit private tra
 
 - Repository: `rendrag-git/lobster-builder`
 - Default branch: `main`
-- Public delivery branch for the OpenClaw plugin work: `feat/gateway-integration`
+- Public delivery branch for the OpenClaw plugin publish/polish work: `feat/gateway-integration-polish`
 - Canonical execution tracker: private project tracker
 
 Private tracker IDs and URLs belong in the tracker system, not in public repository files.
@@ -19,20 +19,30 @@ Earlier local fixture work around `lobster-flow` is historical evidence only. Do
 
 Current gatekeeper label:
 
-- Implement agent-context OpenClaw native actions for Lobster Builder
+- Ship the full Lobster Builder OpenClaw plugin product
 
 Active delivery path:
 
 - Deliver the Lobster Builder gateway integration as a self-contained OpenClaw plugin from this repository.
-- Install the plugin into an OpenClaw gateway and auto-connect the hosted UI to that gateway.
+- Install the plugin into an OpenClaw gateway and have the hosted UI use that gateway by default, with explicit browser-auth or token-missing recovery when the gateway requires auth.
 - Keep the OpenClaw core/main PR path superseded unless a minimal upstream plugin API gap is explicitly identified and accepted as separate upstream work.
 
 Current proof state:
 
-- Self-contained package proof is complete locally and the configured gatekeeper is closed.
-- A tarball install path was packed, unpacked into `/tmp`, production dependencies were installed, and disposable OpenClaw gateways loaded that installed package path with bundled Lobster explicitly disabled.
-- Verified proof covers hosted UI lifecycle, stored parent-child workflow execution through `lobster.workflow`, native message allow/deny, generic tool allow/deny, LLM JSON Task allow/deny, Run Agent allow/deny plus child-run completion, and Node Action allow/deny plus owner-only enforcement through the Builder plugin's `lobster` tool.
-- No minimal upstream OpenClaw/Lobster API gap is currently required for this gate.
+- The full-product gate is active and not complete. The prior closure was premature; publish/polish still needs a current product audit and verified follow-through.
+- Self-contained package and disposable-gateway proofs are accepted slice evidence, not product closure.
+- Live hosted browser deploy/list/run proof passed on the development gateway: the self-contained plugin served the current built asset from the gateway plugin path, the browser UI showed `Authorize browser`, an operator approved the `Lobster Builder` device request, Deploy reported `Deployed hello-world@3`, `lobster.workflow.list` showed the new revision, and `tools.invoke` with `lobster` by workflow id returned `Hello from Lobster!`.
+- Deploy/setup visibility and the real hosted publish/list/run path now have accepted evidence.
+- Current publish/polish audit repairs have landed and are verified: hosted install freshness on the development gateway, hosted same-origin auth copy with URL/token blank, distinct `Authorize browser` and `Gateway token needed` states, approval blocking, repeated approval resume handling, selected-gateway status/cancel/schedule routing, managed run status refresh, stale published-library isolation, partial Deploy + Cron failure feedback with workflow output preserved, package metadata, and packed UI hygiene.
+- Channel targeting has an accepted plugin-only path: when gateway discovery exposes Discord/channel targets, Builder offers them; when discovery cannot prove targets, the Target field stays manual and explicitly says the gateway did not expose targets or channel target discovery is unavailable. Current OpenClaw `channels.status` exposes provider/account status but not Discord guild/channel target lists, so selectable Discord targets require a future upstream read method if reopened.
+- README and product PRDs now lead with install/open/authorize/deploy/verify/troubleshoot for the plugin-hosted path and document local-only vs gateway actions, deploy result/library visibility, channel target manual fallback, managed run status/cancel, and secret hygiene. The normal README setup path now separates managed install/enable from source-link config editing and container tarball installation, states the OpenClaw version floor, opens the hosted UI on the gateway origin, explains first-run browser authorization in the main usage path, records the public-but-unlicensed boundary, package metadata uses a public HTTPS repository URL, container install starts from `npm run pack:plugin`, and post-install proof uses runtime plugin inspection plus plugin doctor.
+- The hosted Gateway panel no longer exposes stale legacy discovery-route copy. Connected discovery summaries use the native gateway discovery model and include agents, models, channels, skills, tools, nodes, channel targets, and effective tools when available; unavailable channel-target discovery keeps the manual target fallback explicit.
+- Live hosted auth retest found that a bare token-auth plugin URL can fail before OpenClaw creates a pending browser/device request. Builder now reports that state as `Gateway token needed` instead of telling users to approve a non-existent pending request, and README documents the dashboard-authenticated URL or manual-token recovery path.
+- Current full local verification has been refreshed after the package/open clarity follow-up: unit tests, lint, build, browser E2E, package dry-run, diff hygiene, public-boundary grep, stale deploy/Vite grep, and non-mutating development-gateway plugin inspection all passed. The development gateway still reports OpenClaw `2026.5.24`, `lobster-builder` `0.1.0` enabled/activated with one HTTP route and `lobster.workflow.publish/list/get/delete`, plugin doctor has no issues, and the hosted route returns tokenless same-origin config.
+- The verified publish/polish work is now committed, pushed to the public delivery branch, and opened as a public GitHub PR against `main`.
+- Public PR automated review comments about legacy hosted token migration, remote-scope isolation for that migration, and stale in-flight status refresh were addressed and verified with focused and full local checks.
+- Full product audit is recorded in `docs/full-product-audit-2026-05-25.md`; it found no new implementation or documentation blocker in the current branch. The remaining gate is gatekeeper review/acceptance of that audit, PR review/merge decision, or any follow-up fixes the gatekeeper opens. Do not mark the Codex goal complete until the configured gatekeeper explicitly agrees the evidence satisfies the full product gate.
+- No minimal upstream OpenClaw/Lobster API gap is currently accepted. If plugin-only delivery cannot satisfy the gate, record the exact upstream gap in the private tracker before changing the delivery path.
 
 ## Codex-Ready Issue Format
 

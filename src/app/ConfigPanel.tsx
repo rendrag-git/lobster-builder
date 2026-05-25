@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useWorkflowStore } from '../store/workflow-store'
 import { resolveWorkflowGatewayConfig, useGatewayStore } from '../store/gateway-store'
-import { useLobsterStore } from '../store/lobster-store'
+import { gatewayConfigKey, useLobsterStore } from '../store/lobster-store'
 import { getAction } from '../actions/init'
 import { ConfigField } from '../components/ConfigField'
 import { Tooltip } from '../components/Tooltip'
@@ -40,6 +40,7 @@ export function ConfigPanel() {
   const gateways = useGatewayStore((s) => s.gateways)
   const gatewayConfig = useGatewayStore((s) => s.config)
   const publishedWorkflows = useLobsterStore((s) => s.publishedWorkflows)
+  const publishedWorkflowsGatewayKey = useLobsterStore((s) => s.publishedWorkflowsGatewayKey)
   const publishedWorkflowsStatus = useLobsterStore((s) => s.publishedWorkflowsStatus)
   const publishedWorkflowsError = useLobsterStore((s) => s.publishedWorkflowsError)
   const refreshPublishedWorkflows = useLobsterStore((s) => s.refreshPublishedWorkflows)
@@ -56,6 +57,12 @@ export function ConfigPanel() {
   const workflowRefs = workflowRefsList.join('\n')
   const bundleMode = workflowMeta.bundle?.mode ?? 'single'
   const targetGateway = resolveWorkflowGatewayConfig(workflowMeta, gateways, gatewayConfig)
+  const targetGatewayKey = targetGateway ? gatewayConfigKey(targetGateway) : null
+  const libraryMatchesTarget = Boolean(
+    targetGatewayKey &&
+    publishedWorkflowsGatewayKey === targetGatewayKey,
+  )
+  const visiblePublishedWorkflows = libraryMatchesTarget ? publishedWorkflows : []
   const libraryBusy = publishedWorkflowsStatus === 'loading'
   const composerLabel = bundleMode === 'parallel'
     ? 'Parallel Branches'
@@ -148,7 +155,7 @@ export function ConfigPanel() {
           />
         </div>
         <div className="mt-2">
-          <HelpLabel tooltip="Selects the saved gateway for Test Run and Publish. Active gateway means the currently connected gateway is used.">
+          <HelpLabel tooltip="Selects the saved gateway for Test Run and Deploy. Active gateway means the currently connected gateway is used.">
             Gateway
           </HelpLabel>
           <select
@@ -170,7 +177,7 @@ export function ConfigPanel() {
         </div>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <div>
-            <HelpLabel tooltip="Schedule metadata for Publish + Cron. The cron job runs inside the OpenClaw Gateway after the workflow is published.">
+            <HelpLabel tooltip="Schedule metadata for Deploy + Cron. The cron job runs inside the OpenClaw Gateway after the workflow is deployed.">
               Cron
             </HelpLabel>
             <input
@@ -214,7 +221,7 @@ export function ConfigPanel() {
             <span>Schedule enabled</span>
           </label>
           <Tooltip
-            content="Changes the action to Publish + Cron. Builder sends schedule metadata to the gateway; channel delivery such as Discord is still configured in OpenClaw."
+            content="Changes the action to Deploy + Cron. Builder sends schedule metadata to the gateway; channel delivery such as Discord happens only when the workflow includes a channel message block."
             side="bottom-left"
             tooltipClassName="w-64"
           >
@@ -445,11 +452,15 @@ export function ConfigPanel() {
             <p className="text-[11px] text-gray-600">Select or connect a gateway to load published workflows.</p>
           ) : publishedWorkflowsError ? (
             <p className="text-[11px] text-red-300" data-testid="workflow-library-error">{publishedWorkflowsError}</p>
-          ) : publishedWorkflows.length === 0 ? (
+          ) : !libraryMatchesTarget ? (
+            <p className="text-[11px] text-gray-600" data-testid="workflow-library-stale">
+              Refresh to load workflows from {targetGateway.name ?? targetGateway.url ?? 'the selected gateway'}.
+            </p>
+          ) : visiblePublishedWorkflows.length === 0 ? (
             <p className="text-[11px] text-gray-600">No published workflows loaded.</p>
           ) : (
             <div className="space-y-1">
-              {publishedWorkflows.map((workflow) => {
+              {visiblePublishedWorkflows.map((workflow) => {
                 const ref = workflowLibraryRef(workflow)
                 const label = workflowLibraryLabel(workflow)
                 const alreadyAdded = workflowRefsList.includes(ref)

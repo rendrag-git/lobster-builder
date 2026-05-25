@@ -1,8 +1,13 @@
 {
   "name": "lobster-builder",
-  "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
+  "description": "OpenClaw-hosted visual builder for Lobster workflows.",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rendrag-git/lobster-builder.git"
+  },
+  "license": "UNLICENSED",
   "files": [
     "dist",
     "plugin/openclaw/index.mjs",
@@ -26,7 +31,8 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "prepack": "npm run build",
-    "deploy": "npm run build && wrangler pages deploy dist/ --project-name lobster-builder"
+    "pack:plugin": "npm pack",
+    "install:plugin": "npm run build && openclaw plugins install --force . && openclaw plugins enable lobster-builder"
   },
   "dependencies": {
     "@clawdbot/lobster": "^2026.4.6",

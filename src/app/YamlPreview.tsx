@@ -1,14 +1,12 @@
 import { useState } from 'react'
-import { Copy, Check, Terminal, Play, Loader2, UploadCloud, Pause, Trash2, X } from 'lucide-react'
+import { Copy, Check, Terminal, Play, Loader2, UploadCloud, Pause, Trash2, X, RefreshCw } from 'lucide-react'
 import { useWorkflowStore } from '../store/workflow-store'
-import { resolveWorkflowGatewayConfig, useGatewayStore } from '../store/gateway-store'
+import { useGatewayStore } from '../store/gateway-store'
 import { useLobsterStore } from '../store/lobster-store'
-import { compileToYaml } from '../compiler/toYaml'
-import { compile } from '../compiler/compile'
 import { Tooltip } from '../components/Tooltip'
-import { validateWorkflowReadiness, type WorkflowReadiness } from '../lib/workflow-readiness'
+import { type WorkflowReadiness } from '../lib/workflow-readiness'
 import type { GatewayConfig } from '../lib/gateway-client'
-import type { LobsterEnvelope } from '../lib/lobster-service'
+import { useWorkflowGatewayActions } from '../hooks/useWorkflowGatewayActions'
 
 function ReadinessPanel({ readiness }: { readiness: WorkflowReadiness }) {
   if (readiness.requiredTools.length === 0 && readiness.messages.length === 0) return null
@@ -73,8 +71,10 @@ function ReadinessPanel({ readiness }: { readiness: WorkflowReadiness }) {
 function ExecutionResult({ gatewayConfig }: { gatewayConfig: GatewayConfig | null }) {
   const { execStatus, lastResult, lastError, currentRun } = useLobsterStore()
   const resume = useLobsterStore((s) => s.resume)
+  const status = useLobsterStore((s) => s.status)
   const cancel = useLobsterStore((s) => s.cancel)
   const reset = useLobsterStore((s) => s.reset)
+  const gatewayOpts = gatewayConfig ? { gatewayConfig } : null
 
   if (execStatus === 'idle') return null
 
@@ -133,18 +133,44 @@ function ExecutionResult({ gatewayConfig }: { gatewayConfig: GatewayConfig | nul
             {currentRun.status ? <span className="ml-2 text-gray-400">{currentRun.status}</span> : null}
           </div>
           {currentRun.status && !['succeeded', 'failed', 'cancelled', 'lost'].includes(currentRun.status) ? (
-            <Tooltip content="Cancel this managed OpenClaw TaskFlow through tasks.flows.cancel.">
-              <button
-                type="button"
-                onClick={() => cancel(currentRun.flowId)}
-                disabled={execStatus === 'running'}
-                className="inline-flex items-center gap-1 rounded px-2 py-1 text-yellow-300 hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
-                data-testid="cancel-run-btn"
-              >
-                <X size={11} />
-                <span>Cancel</span>
-              </button>
-            </Tooltip>
+            <div className="flex items-center gap-1">
+              <Tooltip content="Refresh this managed OpenClaw TaskFlow through tasks.flows.get.">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (gatewayOpts) {
+                      void status(currentRun.flowId, gatewayOpts)
+                      return
+                    }
+                    void status(currentRun.flowId)
+                  }}
+                  disabled={execStatus === 'running'}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-cyan-300 hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                  data-testid="refresh-run-status-btn"
+                >
+                  <RefreshCw size={11} />
+                  <span>Refresh</span>
+                </button>
+              </Tooltip>
+              <Tooltip content="Cancel this managed OpenClaw TaskFlow through tasks.flows.cancel.">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (gatewayOpts) {
+                      void cancel(currentRun.flowId, gatewayOpts)
+                      return
+                    }
+                    void cancel(currentRun.flowId)
+                  }}
+                  disabled={execStatus === 'running'}
+                  className="inline-flex items-center gap-1 rounded px-2 py-1 text-yellow-300 hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                  data-testid="cancel-run-btn"
+                >
+                  <X size={11} />
+                  <span>Cancel</span>
+                </button>
+              </Tooltip>
+            </div>
           ) : null}
         </div>
       )}
@@ -155,14 +181,28 @@ function ExecutionResult({ gatewayConfig }: { gatewayConfig: GatewayConfig | nul
           <p className="text-xs text-gray-300">{approval.prompt}</p>
           <div className="flex gap-2">
             <button
-              onClick={() => approvalRef && resume(approvalRef, true, gatewayConfig ? { gatewayConfig } : undefined)}
+              onClick={() => {
+                if (!approvalRef) return
+                if (gatewayOpts) {
+                  void resume(approvalRef, true, gatewayOpts)
+                  return
+                }
+                void resume(approvalRef, true)
+              }}
               disabled={!approvalRef}
               className="flex-1 py-1 text-xs bg-green-700 hover:bg-green-600 rounded text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               Approve
             </button>
             <button
-              onClick={() => approvalRef && resume(approvalRef, false, gatewayConfig ? { gatewayConfig } : undefined)}
+              onClick={() => {
+                if (!approvalRef) return
+                if (gatewayOpts) {
+                  void resume(approvalRef, false, gatewayOpts)
+                  return
+                }
+                void resume(approvalRef, false)
+              }}
               disabled={!approvalRef}
               className="flex-1 py-1 text-xs bg-gray-700 hover:bg-gray-600 rounded text-gray-300 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
@@ -182,16 +222,7 @@ function ExecutionResult({ gatewayConfig }: { gatewayConfig: GatewayConfig | nul
   )
 }
 
-function publishedScheduleJobId(result: LobsterEnvelope | null): string | null {
-  const firstOutput = result?.output?.[0]
-  if (!firstOutput || typeof firstOutput !== 'object' || Array.isArray(firstOutput)) return null
-  const schedule = (firstOutput as Record<string, unknown>).schedule
-  if (!schedule || typeof schedule !== 'object' || Array.isArray(schedule)) return null
-  const jobId = (schedule as Record<string, unknown>).jobId
-  return typeof jobId === 'string' && jobId.trim() ? jobId.trim() : null
-}
-
-function ScheduleControls() {
+function ScheduleControls({ gatewayConfig }: { gatewayConfig: GatewayConfig | null }) {
   const workflowMeta = useWorkflowStore((s) => s.workflowMeta)
   const setWorkflowMeta = useWorkflowStore((s) => s.setWorkflowMeta)
   const execStatus = useLobsterStore((s) => s.execStatus)
@@ -201,10 +232,14 @@ function ScheduleControls() {
   const jobId = schedule?.jobId?.trim()
   if (!jobId) return null
   const currentSchedule = schedule ?? {}
+  const gatewayOpts = gatewayConfig ? { gatewayConfig } : null
 
-  const busy = execStatus === 'running'
+  const busy = execStatus === 'running' || execStatus === 'approval'
   const updateSchedule = (enabled: boolean) => {
-    void setScheduleEnabled(jobId, enabled).then((result) => {
+    const resultPromise = gatewayOpts
+      ? setScheduleEnabled(jobId, enabled, gatewayOpts)
+      : setScheduleEnabled(jobId, enabled)
+    void resultPromise.then((result) => {
       if (!result?.ok) return
       setWorkflowMeta({
         schedule: {
@@ -215,7 +250,8 @@ function ScheduleControls() {
     })
   }
   const removeSchedule = () => {
-    void unschedule(jobId).then((result) => {
+    const resultPromise = gatewayOpts ? unschedule(jobId, gatewayOpts) : unschedule(jobId)
+    void resultPromise.then((result) => {
       if (!result?.ok) return
       setWorkflowMeta({
         schedule: {
@@ -284,28 +320,26 @@ function ScheduleControls() {
 }
 
 export function YamlPreview() {
-  const nodes = useWorkflowStore((s) => s.nodes)
-  const edges = useWorkflowStore((s) => s.edges)
-  const workflowMeta = useWorkflowStore((s) => s.workflowMeta)
-  const setWorkflowMeta = useWorkflowStore((s) => s.setWorkflowMeta)
   const gatewayStatus = useGatewayStore((s) => s.status)
-  const gatewayConfig = useGatewayStore((s) => s.config)
-  const gateways = useGatewayStore((s) => s.gateways)
-  const discovery = useGatewayStore((s) => s.discovery)
-  const lobsterRun = useLobsterStore((s) => s.run)
-  const lobsterPublish = useLobsterStore((s) => s.publish)
   const execStatus = useLobsterStore((s) => s.execStatus)
+  const {
+    yaml,
+    error,
+    targetGateway,
+    targetGatewayLabel,
+    readiness,
+    hasRunnableWorkflow,
+    scheduleEnabled,
+    canRun,
+    canDeploy,
+    baseDisabledReason,
+    deployDisabledReason,
+    run,
+    deploy,
+  } = useWorkflowGatewayActions()
 
   const [copiedYaml, setCopiedYaml] = useState(false)
   const [copiedCmd, setCopiedCmd] = useState(false)
-
-  let yaml = ''
-  let error = ''
-  try {
-    yaml = compileToYaml(nodes, edges, workflowMeta)
-  } catch (err) {
-    error = err instanceof Error ? err.message : String(err)
-  }
 
   const copyYaml = async () => {
     if (!yaml) return
@@ -321,102 +355,17 @@ export function YamlPreview() {
     setTimeout(() => setCopiedCmd(false), 2000)
   }
 
-  const targetGateway = resolveWorkflowGatewayConfig(workflowMeta, gateways, gatewayConfig)
-  const compiledWorkflow = (() => {
-    try {
-      return compile(nodes, edges, workflowMeta)
-    } catch {
-      return null
-    }
-  })()
-  const readiness = compiledWorkflow
-    ? validateWorkflowReadiness({
-        workflow: compiledWorkflow,
-        targetGateway,
-        activeGateway: gatewayConfig,
-        gatewayStatus,
-        discovery,
-      })
-    : null
-  const hasRunnableWorkflow = Boolean(yaml && compiledWorkflow?.steps.length)
-  const readinessBlocksRun = readiness?.blocksRun ?? false
-  const readinessBlockedMessage = readiness?.messages.at(-1) ?? 'Resolve OpenClaw readiness issues before running or publishing.'
   const workflowCanSendChannelMessage = readiness?.requiredTools.includes('message') ?? false
-  const scheduleEnabled = Boolean(workflowMeta.schedule?.enabled && workflowMeta.schedule?.cron?.trim())
-  const scheduleSessionKey = discovery?.effectiveTools?.sessionKey
-  const scheduleBlocksPublish = scheduleEnabled && !scheduleSessionKey
-  const canRun = !!targetGateway && hasRunnableWorkflow && execStatus !== 'running' && !readinessBlocksRun
-  const canPublish = canRun && !scheduleBlocksPublish
-
-  const handleRun = () => {
-    if (!hasRunnableWorkflow || !compiledWorkflow || execStatus === 'running') return
-    const workflow = compiledWorkflow
-    const argsJson = workflow.args
-      ? JSON.stringify(Object.fromEntries(
-          Object.entries(workflow.args).map(([k, v]) => [k, v.default ?? ''])
-        ))
-      : undefined
-    if (!targetGateway) return
-    lobsterRun(yaml, { argsJson, cwd: workflow.cwd, name: workflow.name, gatewayConfig: targetGateway })
-  }
-
-  const handlePublish = () => {
-    if (!hasRunnableWorkflow || !compiledWorkflow || execStatus === 'running') return
-    const workflow = compiledWorkflow
-    if (!targetGateway) return
-    void lobsterPublish(yaml, {
-      id: workflowMeta.bundle?.id,
-      name: workflow.name,
-      cwd: workflow.cwd,
-      metadata: workflow.openclaw,
-      schedule: scheduleEnabled && discovery?.effectiveTools?.sessionKey
-        ? {
-            enabled: true,
-            cron: workflowMeta.schedule?.cron?.trim() ?? '',
-            timezone: workflowMeta.schedule?.timezone?.trim() || undefined,
-            jobId: workflowMeta.schedule?.jobId,
-            sessionKey: discovery.effectiveTools.sessionKey,
-            agentId: discovery.effectiveTools.agentId,
-            toolsAllow: readiness?.requiredTools,
-          }
-        : undefined,
-      gatewayConfig: targetGateway,
-    }).then((result) => {
-      const jobId = publishedScheduleJobId(result)
-      if (!jobId || !workflowMeta.schedule) return
-      setWorkflowMeta({
-        schedule: {
-          ...workflowMeta.schedule,
-          jobId,
-        },
-      })
-    })
-  }
-  const targetGatewayLabel = targetGateway?.name ?? targetGateway?.url ?? 'selected gateway'
-  const baseDisabledReason = !targetGateway
-    ? 'Connect or select a gateway first.'
-    : !hasRunnableWorkflow
-      ? 'Add at least one node before running or publishing.'
-      : readinessBlocksRun
-        ? readinessBlockedMessage
-      : execStatus === 'running'
-        ? 'Wait for the current gateway command to finish.'
-        : null
-  const publishDisabledReason = baseDisabledReason ?? (
-    scheduleBlocksPublish
-      ? 'Publish + Cron requires gateway discovery to identify the invoking agent session.'
-      : null
-  )
   const runTitle = !targetGateway
     ? 'Connect or select a gateway first'
     : gatewayStatus !== 'connected'
       ? `Direct test run via ${targetGateway.name ?? targetGateway.url}`
       : 'Direct test run via gateway'
-  const publishTitle = !targetGateway
+  const deployTitle = !targetGateway
     ? 'Connect or select a gateway first'
     : scheduleEnabled
-      ? `Publish and schedule workflow on ${targetGateway.name ?? targetGateway.url}`
-      : `Publish workflow to ${targetGateway.name ?? targetGateway.url}`
+      ? `Deploy and schedule workflow on ${targetGateway.name ?? targetGateway.url}`
+      : `Deploy workflow to ${targetGateway.name ?? targetGateway.url}`
   const runTooltip = (
     <>
       <span className="block font-medium text-green-300">Test Run</span>
@@ -434,17 +383,17 @@ export function YamlPreview() {
   const publishTooltip = (
     <>
       <span className="block font-medium text-blue-300">
-        {scheduleEnabled ? 'Publish + Cron' : 'Publish'}
+        {scheduleEnabled ? 'Deploy + Cron' : 'Deploy'}
       </span>
       <span className="mt-1 block">
         Sends the YAML to <span className="font-mono">lobster.workflow.publish</span> on the selected gateway.
       </span>
       <span className="mt-1 block text-gray-500">
         {scheduleEnabled
-          ? 'Schedule metadata asks OpenClaw to create or update a gateway cron job. Builder does not choose a Discord delivery target yet.'
-          : 'Publish stores the workflow artifact. It does not run it, start an agent turn, or post to Discord.'}
+          ? 'Schedule metadata asks OpenClaw to create or update a gateway cron job. Message delivery happens only if the workflow includes a Send Channel Message block.'
+          : 'Deploy stores the workflow artifact on the gateway. Download YAML only saves a local file.'}
       </span>
-      {publishDisabledReason ? <span className="mt-1 block text-yellow-300">{publishDisabledReason}</span> : null}
+      {deployDisabledReason ? <span className="mt-1 block text-yellow-300">{deployDisabledReason}</span> : null}
     </>
   )
 
@@ -452,11 +401,11 @@ export function YamlPreview() {
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-gray-800 flex-shrink-0">
-        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">YAML Preview</span>
+        <span className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Deploy</span>
         <div className="flex gap-1">
           <Tooltip content={runTooltip} testId="run-workflow-tooltip">
             <button
-              onClick={handleRun}
+              onClick={run}
               disabled={!canRun}
               title={runTitle}
               className="flex items-center gap-1 px-2 py-1 text-xs text-green-400 hover:text-green-300 hover:bg-gray-800 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
@@ -468,14 +417,14 @@ export function YamlPreview() {
           </Tooltip>
           <Tooltip content={publishTooltip} testId="publish-workflow-tooltip">
             <button
-              onClick={handlePublish}
-              disabled={!canPublish}
-              title={publishTitle}
+              onClick={deploy}
+              disabled={!canDeploy}
+              title={deployTitle}
               className="flex items-center gap-1 px-2 py-1 text-xs text-blue-400 hover:text-blue-300 hover:bg-gray-800 rounded transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
               data-testid="publish-workflow-btn"
             >
               {execStatus === 'running' ? <Loader2 size={11} className="animate-spin" /> : <UploadCloud size={11} />}
-              <span>{scheduleEnabled ? 'Publish + Cron' : 'Publish'}</span>
+              <span>{scheduleEnabled ? 'Deploy + Cron' : 'Deploy'}</span>
             </button>
           </Tooltip>
           <Tooltip
@@ -492,7 +441,7 @@ export function YamlPreview() {
             </button>
           </Tooltip>
           <Tooltip
-            content="Copies the .lobster YAML artifact. This is the file content that Publish sends to the gateway."
+            content="Copies the .lobster YAML artifact. This is the file content that Deploy sends to the gateway."
             testId="copy-yaml-tooltip"
           >
             <button
@@ -509,7 +458,7 @@ export function YamlPreview() {
       </div>
 
       {readiness && <ReadinessPanel readiness={readiness} />}
-      <ScheduleControls />
+      <ScheduleControls gatewayConfig={targetGateway} />
 
       {/* Content */}
       <div className="flex-1 overflow-auto">

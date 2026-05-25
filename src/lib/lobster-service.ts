@@ -359,19 +359,34 @@ export async function lobsterPublishWorkflow(
     throw new Error('Published workflow response did not include workflowId and revision for scheduling.')
   }
 
-  const schedule = await lobsterScheduleWorkflow(
-    config,
-    {
-      workflowId,
-      revision,
-      name: stringValue(workflow?.name) ?? opts?.name,
-    },
-    requestedSchedule,
-  )
+  try {
+    const schedule = await lobsterScheduleWorkflow(
+      config,
+      {
+        workflowId,
+        revision,
+        name: stringValue(workflow?.name) ?? opts?.name,
+      },
+      requestedSchedule,
+    )
 
-  return {
-    ...publishResult,
-    output: [{ ...(workflow ?? { workflowId, revision }), schedule }],
+    return {
+      ...publishResult,
+      output: [{ ...(workflow ?? { workflowId, revision }), schedule }],
+    }
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return {
+      ...publishResult,
+      ok: false,
+      status: 'schedule_error',
+      output: [{ ...(workflow ?? { workflowId, revision }), scheduleError: message }],
+      error: {
+        type: 'schedule_error',
+        message: `Workflow deployed, but cron scheduling failed: ${message}`,
+      },
+      requiresApproval: null,
+    }
   }
 }
 

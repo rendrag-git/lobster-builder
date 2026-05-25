@@ -25,7 +25,22 @@ const sendChannelMessage: ActionDefinition = {
         { label: 'Telegram', value: 'telegram' },
       ],
     },
-    { id: 'target', label: 'Target', type: 'text', required: true, placeholder: 'channel, thread, user, or route' },
+    {
+      id: 'guildId',
+      label: 'Discord Guild/Server ID',
+      type: 'text',
+      placeholder: 'optional; required when Discord channel lookup needs a server',
+      description: 'Optional Discord server id. Use this when the same channel name or id needs server context.',
+    },
+    {
+      id: 'target',
+      label: 'Target',
+      type: 'text',
+      required: true,
+      gatewaySource: 'channelTargets',
+      placeholder: 'channel:<id>, thread, user, or route',
+      description: 'Uses gateway target suggestions when available. Otherwise enter the OpenClaw message target manually.',
+    },
     { id: 'message', label: 'Message', type: 'textarea', required: true, placeholder: 'Workflow finished: $previous.stdout' },
     { id: 'useInputAsMessage', label: 'Use input as message body', type: 'boolean' },
   ],
@@ -37,6 +52,8 @@ const sendChannelMessage: ActionDefinition = {
       to: String(config.target ?? ''),
       message: useInputAsMessage ? '' : String(config.message ?? ''),
     };
+    const guildId = String(config.guildId ?? '').trim();
+    if (guildId) args.guildId = guildId;
 
     const step = createOpenClawNativeToolStep(ctx.nodeId, {
       tool: 'message',

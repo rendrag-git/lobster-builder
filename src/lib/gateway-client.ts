@@ -130,7 +130,7 @@ function isHostedGatewayScope(rawUrl: string): boolean {
   if (!trimmed) return true
   try {
     const parsed = new URL(trimmed, window.location.href)
-    return parsed.host === window.location.host
+    return parsed.origin === window.location.origin
   } catch {
     return false
   }

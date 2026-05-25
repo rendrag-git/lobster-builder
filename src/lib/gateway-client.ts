@@ -125,6 +125,17 @@ function resolveGatewayTokenScope(rawUrl: string): string {
   }
 }
 
+function isHostedGatewayScope(rawUrl: string): boolean {
+  const trimmed = rawUrl.trim()
+  if (!trimmed) return true
+  try {
+    const parsed = new URL(trimmed, window.location.href)
+    return parsed.host === window.location.host
+  } catch {
+    return false
+  }
+}
+
 function hostedTokenSessionKey(rawUrl: string): string {
   return `${HOSTED_TOKEN_SESSION_KEY_PREFIX}${resolveGatewayTokenScope(rawUrl)}`
 }
@@ -141,6 +152,7 @@ function readHostedSessionToken(rawUrl: string): string {
     if (scopedToken) return scopedToken
     const openClawToken = storage.getItem(openClawTokenSessionKey(rawUrl))?.trim()
     if (openClawToken) return openClawToken
+    if (!isHostedGatewayScope(rawUrl)) return ''
     const legacyToken = storage.getItem(OPENCLAW_LEGACY_TOKEN_SESSION_KEY)?.trim()
     if (legacyToken) {
       storage.setItem(hostedTokenSessionKey(rawUrl), legacyToken)
@@ -154,7 +166,8 @@ function readHostedSessionToken(rawUrl: string): string {
 
 function withHostedSessionToken(config: GatewayConfig): GatewayConfig {
   if (config.token.trim()) return config
-  const token = readHostedSessionToken(config.url) || (config.url.trim() ? readHostedSessionToken('') : '')
+  const token = readHostedSessionToken(config.url)
+    || (config.url.trim() && isHostedGatewayScope(config.url) ? readHostedSessionToken('') : '')
   return token ? { ...config, token } : config
 }
 

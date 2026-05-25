@@ -661,6 +661,27 @@ describe('loadHostedGatewayConfig()', () => {
     expect(sessionStorage.getItem('openclaw.control.token.v1')).toBe('legacy-openclaw-token')
   })
 
+  it('does not attach a legacy OpenClaw Control UI token to a remote gateway URL', async () => {
+    const frames = mockHostedGatewayRpc({
+      agents: { agents: [] },
+      sessionStatus: {},
+      tools: { groups: [] },
+      channels: { channels: {} },
+      nodes: { nodes: [] },
+      effective: { groups: [] },
+    })
+    sessionStorage.setItem('openclaw.control.token.v1', 'legacy-openclaw-token')
+
+    await callGatewayRpc({ url: 'http://remote-gateway.example', token: '', persist: false }, 'agents.list')
+
+    const connectFrame = frames.find((frame) => frame.method === 'connect')
+    expect(connectFrame?.params).not.toMatchObject({
+      auth: { token: 'legacy-openclaw-token' },
+    })
+    expect(sessionStorage.getItem('lobster-builder.gateway.token.v1:http://remote-gateway.example')).toBeNull()
+    expect(sessionStorage.getItem('openclaw.control.token.v1')).toBe('legacy-openclaw-token')
+  })
+
   it('hydrates same-origin Gateway RPC calls from the hosted session token', async () => {
     const frames = mockHostedGatewayRpc({
       agents: { agents: [] },

@@ -4,7 +4,7 @@
 
 Lobster Builder is a visual React Flow builder for OpenClaw-backed Lobster workflows. It is not a standalone automation runtime and should not invent a separate permission model.
 
-The intended distribution path is an OpenClaw plugin that serves the Builder UI from the gateway. When installed this way, the UI should auto-connect to the hosting gateway; manually saved gateway connections are a secondary/multi-gateway authoring path.
+The intended distribution path is an OpenClaw plugin that serves the Builder UI from the gateway. When installed this way, the UI should use the hosting gateway by default and make gateway auth state explicit; token-auth gateways may require opening Builder from a dashboard-authenticated URL or adding a manual connection token. Manually saved gateway connections are a secondary/multi-gateway authoring path.
 
 The intended runtime path is:
 

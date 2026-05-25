@@ -141,7 +141,11 @@ function readHostedSessionToken(rawUrl: string): string {
     if (scopedToken) return scopedToken
     const openClawToken = storage.getItem(openClawTokenSessionKey(rawUrl))?.trim()
     if (openClawToken) return openClawToken
-    storage.removeItem(OPENCLAW_LEGACY_TOKEN_SESSION_KEY)
+    const legacyToken = storage.getItem(OPENCLAW_LEGACY_TOKEN_SESSION_KEY)?.trim()
+    if (legacyToken) {
+      storage.setItem(hostedTokenSessionKey(rawUrl), legacyToken)
+      return legacyToken
+    }
     return ''
   } catch {
     return ''

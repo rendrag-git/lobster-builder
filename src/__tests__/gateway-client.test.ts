@@ -649,6 +649,18 @@ describe('loadHostedGatewayConfig()', () => {
     expect(loadHostedGatewayConfig()?.token).toBe('openclaw-session-token')
   })
 
+  it('migrates a legacy OpenClaw Control UI token without deleting it', () => {
+    sessionStorage.setItem('openclaw.control.token.v1', 'legacy-openclaw-token')
+    window.__LOBSTER_BUILDER_GATEWAY__ = {
+      hosted: true,
+      autoConnect: true,
+    }
+
+    expect(loadHostedGatewayConfig()?.token).toBe('legacy-openclaw-token')
+    expect(sessionStorage.getItem(`lobster-builder.gateway.token.v1:ws://${window.location.host}`)).toBe('legacy-openclaw-token')
+    expect(sessionStorage.getItem('openclaw.control.token.v1')).toBe('legacy-openclaw-token')
+  })
+
   it('hydrates same-origin Gateway RPC calls from the hosted session token', async () => {
     const frames = mockHostedGatewayRpc({
       agents: { agents: [] },

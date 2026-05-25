@@ -72,10 +72,15 @@ function execStatusForResult(result: LobsterEnvelope): LobsterExecStatus {
   if (!result.ok) return 'error'
   if (result.requiresApproval) return 'approval'
   const runStatus = result.run?.status
+  return execStatusForRunStatus(runStatus, 'success')
+}
+
+function execStatusForRunStatus(runStatus: string | undefined, fallback: LobsterExecStatus = 'running'): LobsterExecStatus {
+  if (!runStatus) return fallback
   if (runStatus === 'cancelled') return 'cancelled'
   if (runStatus === 'failed' || runStatus === 'lost') return 'error'
   if (runStatus === 'succeeded') return 'success'
-  return 'success'
+  return 'running'
 }
 
 export const useLobsterStore = create<LobsterState>((set, get) => ({
@@ -221,16 +226,10 @@ export const useLobsterStore = create<LobsterState>((set, get) => ({
           currentRun: result.run,
           lastResult: result,
           lastOperation: 'status',
-          execStatus: runStatus === 'cancelled'
-            ? 'cancelled'
-            : runStatus === 'failed' || runStatus === 'lost'
-              ? 'error'
-              : runStatus === 'succeeded'
-                ? 'success'
-                : get().execStatus,
+          execStatus: execStatusForRunStatus(runStatus),
           lastError: runStatus === 'failed' || runStatus === 'lost'
             ? (result.error?.message ?? `Run ${runStatus}.`)
-            : get().lastError,
+            : null,
         })
       }
       return result

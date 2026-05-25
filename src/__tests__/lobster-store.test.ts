@@ -249,4 +249,24 @@ describe('useLobsterStore', () => {
       'ws://workflow-gateway/ws',
     ])
   })
+
+  it('maps refreshed in-flight run status back to running instead of preserving stale approval state', async () => {
+    stubGatewayRpc((method) => {
+      if (method === 'tasks.flows.get') {
+        return { flow: { id: 'flow-1', status: 'running' } }
+      }
+      return {}
+    })
+    useLobsterStore.setState({
+      execStatus: 'approval',
+      lastError: 'Waiting for approval',
+      currentRun: { flowId: 'flow-1', status: 'waiting' },
+    })
+
+    await useLobsterStore.getState().status('flow-1', { gatewayConfig: workflowGateway })
+
+    expect(useLobsterStore.getState().execStatus).toBe('running')
+    expect(useLobsterStore.getState().lastError).toBeNull()
+    expect(useLobsterStore.getState().currentRun?.status).toBe('running')
+  })
 })
